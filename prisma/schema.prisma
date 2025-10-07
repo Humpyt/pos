@@ -1,0 +1,259 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  products    Product[]
+}
+
+model Branch {
+  id          String   @id @default(cuid())
+  name        String
+  address     String?
+  phone       String?
+  email       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  inventory   Inventory[]
+  sales       Sale[]
+  staff       User[]
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String
+  role        UserRole @default(CASHIER)
+  password    String
+  branchId    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  branch      Branch?  @relation(fields: [branchId], references: [id])
+  sales       Sale[]
+}
+
+model Product {
+  id            String        @id @default(cuid())
+  sku           String        @unique
+  name          String
+  description   String?
+  categoryId    String
+  barcode       String?
+  image         String?
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  category      Category      @relation(fields: [categoryId], references: [id])
+  variations    ProductVariation[]
+  inventory     Inventory[]
+  saleItems     SaleItem[]
+  batches       ProductBatch[]
+}
+
+model ProductVariation {
+  id          String   @id @default(cuid())
+  productId   String
+  name        String   // e.g., "1L Bottle", "6-Pack", "Carton"
+  unitPrice   Float
+  costPrice   Float
+  weight      Float?   // in kg
+  volume      Float?   // in liters
+  piecesPerCarton Int?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  product     Product @relation(fields: [productId], references: [id])
+  inventory   Inventory[]
+  saleItems   SaleItem[]
+  batches     ProductBatch[]
+}
+
+model ProductBatch {
+  id          String    @id @default(cuid())
+  productId   String
+  variationId String?
+  batchNumber String
+  quantity    Int
+  expiryDate  DateTime?
+  manufactureDate DateTime?
+  costPrice   Float
+  supplier    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  product     Product         @relation(fields: [productId], references: [id])
+  variation   ProductVariation? @relation(fields: [variationId], references: [id])
+  inventory   Inventory[]
+  saleItems   SaleItem[]
+}
+
+model Inventory {
+  id          String   @id @default(cuid())
+  branchId    String
+  productId   String
+  variationId String?
+  batchId     String?
+  quantity    Int      @default(0)
+  minStock    Int      @default(0)
+  maxStock    Int?
+  reorderPoint Int     @default(0)
+  lastUpdated DateTime @default(now())
+
+  // Relations
+  branch      Branch @relation(fields: [branchId], references: [id])
+  product     Product @relation(fields: [productId], references: [id])
+  variation   ProductVariation? @relation(fields: [variationId], references: [id])
+  batch       ProductBatch? @relation(fields: [batchId], references: [id])
+
+  @@unique([branchId, productId, variationId, batchId])
+}
+
+model Sale {
+  id            String      @id @default(cuid())
+  saleNumber    String      @unique
+  branchId      String
+  userId        String
+  customerId    String?
+  subtotal      Float
+  taxAmount     Float       @default(0)
+  discountAmount Float      @default(0)
+  totalAmount   Float
+  paymentMethod PaymentMethod
+  paymentStatus PaymentStatus @default(PENDING)
+  status        SaleStatus  @default(PENDING)
+  notes         String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // Relations
+  branch        Branch      @relation(fields: [branchId], references: [id])
+  user          User        @relation(fields: [userId], references: [id])
+  customer      Customer?   @relation(fields: [customerId], references: [id])
+  items         SaleItem[]
+  payments      Payment[]
+}
+
+model SaleItem {
+  id            String   @id @default(cuid())
+  saleId        String
+  productId     String
+  variationId   String?
+  batchId       String?
+  quantity      Int
+  unitPrice     Float
+  totalPrice    Float
+  costPrice     Float
+  profit        Float
+  createdAt     DateTime @default(now())
+
+  // Relations
+  sale          Sale          @relation(fields: [saleId], references: [id])
+  product       Product       @relation(fields: [productId], references: [id])
+  variation     ProductVariation? @relation(fields: [variationId], references: [id])
+  batch         ProductBatch? @relation(fields: [batchId], references: [id])
+}
+
+model Customer {
+  id          String    @id @default(cuid())
+  name        String
+  email       String?   @unique
+  phone       String?
+  address     String?
+  customerType CustomerType @default(WALK_IN)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  sales       Sale[]
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  saleId        String
+  amount        Float
+  paymentMethod PaymentMethod
+  status        PaymentStatus @default(PENDING)
+  transactionId String?
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  sale          Sale          @relation(fields: [saleId], references: [id])
+}
+
+model Expense {
+  id          String       @id @default(cuid())
+  branchId    String
+  category    String
+  description String
+  amount      Float
+  date        DateTime
+  receiptNumber String?
+  notes       String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+// Enums
+enum UserRole {
+  ADMIN
+  MANAGER
+  CASHIER
+  INVENTORY_MANAGER
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  MOBILE_MONEY
+  BANK_TRANSFER
+  CREDIT
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  PARTIAL
+  REFUNDED
+  CANCELLED
+}
+
+enum SaleStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+enum CustomerType {
+  WALK_IN
+  REGULAR
+  WHOLESALE
+  CORPORATE
+}

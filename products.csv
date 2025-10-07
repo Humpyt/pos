@@ -1,0 +1,67 @@
+SKU,Name,Description,Category,Barcode,Image,Price,Cost,Weight,Volume,PiecesPerCarton
+COC-COLA-1L,"Coca-Cola 1L","Refreshing cola drink","Beverages","5449000000996",,150,120,1.05,1,12
+COC-COLA-500,"Coca-Cola 500ml","Refreshing cola drink","Beverages","5449000049185",,80,65,0.55,0.5,24
+COC-COLA-2L,"Coca-Cola 2L","Refreshing cola drink - Family size","Beverages","5449000014081",,280,220,2.1,2,6
+FAN-ORNG-1L,"Fanta Orange 1L","Orange flavored soft drink","Beverages","5449000001008",,140,110,1.05,1,12
+FAN-ORNG-500,"Fanta Orange 500ml","Orange flavored soft drink","Beverages","5449000049239",,75,60,0.55,0.5,24
+SPR-CRN-1L,"Sprite Cranberry 1L","Cranberry lemonade drink","Beverages","5449000252663",,160,130,1.05,1,12
+SPR-ORIG-1L,"Sprite 1L","Lemon-lime soft drink","Beverages","5449000001015",,140,110,1.05,1,12
+PEP-COLA-1L,"Pepsi Cola 1L","Cola flavored soft drink","Beverages","5449000131805",,145,115,1.05,1,12
+PEP-COLA-2L,"Pepsi Cola 2L","Cola flavored soft drink - Family size","Beverages","5449000131829",,270,210,2.1,2,6
+MIR-FRUT-1L,"Mirinda Fruit Punch 1L","Mixed fruit flavored drink","Beverages","5449000214473",,130,100,1.05,1,12
+MIR-ORNG-1L,"Mirinda Orange 1L","Orange flavored soft drink","Beverages","5449000001046",,135,105,1.05,1,12
+MIR-STRW-1L,"Mirinda Strawberry 1L","Strawberry flavored soft drink","Beverages","5449000214497",,135,105,1.05,1,12
+AQV-FINA-500,"Aquafina Water 500ml","Purified drinking water","Water","5449000132477",,50,40,0.52,0.5,24
+AQV-FINA-1L,"Aquafina Water 1L","Purified drinking water","Water","5449000001053",,80,65,1.02,1,12
+AQV-FINA-1.5,"Aquafina Water 1.5L","Purified drinking water","Water","5449000014110",,110,90,1.53,1.5,8
+KAS-NAT-500,"Krest Natural 500ml","Mineral water","Water","5449000049284",,45,35,0.52,0.5,24
+KAS-NAT-1L,"Krest Natural 1L","Mineral water","Water","5449000001060",,70,55,1.02,1,12
+KAS-LEM-500,"Krest Lemon 500ml","Lemon flavored mineral water","Water","5449000049291",,50,40,0.52,0.5,24
+KAS-LEM-1L,"Krest Lemon 1L","Lemon flavored mineral water","Water","5449000001077",,80,65,1.02,1,12
+MTV-EXCT-500,"Mountain Dew Extreme 500ml","Citrus flavored energy drink","Energy Drinks","5449000132521",,120,95,0.55,0.5,24
+MTV-ORIG-500,"Mountain Dew 500ml","Citrus flavored soft drink","Energy Drinks","5449000132514",,110,85,0.55,0.5,24
+GAT-RADE-500,"Gatorade Orange 500ml","Sports energy drink","Energy Drinks","5449000214503",,140,110,0.55,0.5,24
+GAT-RADE-1L,"Gatorade Orange 1L","Sports energy drink","Energy Drinks","5449000014127",,220,175,1.05,1,12
+RED-BLL-250,"Red Bull 250ml","Energy drink","Energy Drinks","5449000001084",,200,160,0.27,0.25,48
+RED-BLL-500,"Red Bull 500ml","Energy drink","Energy Drinks","5449000049307",,350,280,0.52,0.5,24
+TWI-LEMO-500,"Twisted Lemon 500ml","Lemon flavored drink","Beverages","5449000214527",,100,80,0.55,0.5,24
+TWI-ORNG-500,"Twisted Orange 500ml","Orange flavored drink","Beverages","5449000214534",,100,80,0.55,0.5,24
+LUC-ORNG-1L,"Lucozade Orange 1L","Energy drink","Energy Drinks","5449000001091",,180,145,1.05,1,12
+LUC-MANG-1L,"Lucozade Mango 1L","Mango flavored energy drink","Energy Drinks","5449000014134",,180,145,1.05,1,12
+5HNY-ORNG-1L,"5 Hour Orange 1L","Orange energy drink","Energy Drinks","5449000214558",,190,150,1.05,1,12
+5HNY-BERR-1L,"5 Hour Berry 1L","Berry energy drink","Energy Drinks","5449000214565",,190,150,1.05,1,12
+JUS-APPL-1L,"Fresh Apple Juice 1L","100% apple juice","Juices","5449000014141",,160,130,1.05,1,12
+JUS-MANG-1L,"Fresh Mango Juice 1L","100% mango juice","Juices","5449000014158",,170,135,1.05,1,12
+JUS-PNAP-1L,"Fresh Pineapple Juice 1L","100% pineapple juice","Juices","5449000014165",,165,135,1.05,1,12
+JUS-ORNG-1L,"Fresh Orange Juice 1L","100% orange juice","Juices","5449000014172",,155,125,1.05,1,12
+JUS-TOMT-1L,"Fresh Tomato Juice 1L","100% tomato juice","Juices","5449000014189",,145,115,1.05,1,12
+JUS-CRBRY-1L,"Cranberry Juice 1L","Cranberry juice blend","Juices","5449000014196",,180,145,1.05,1,12
+JUS-GREAP-1L,"Grape Juice 1L","100% grape juice","Juices","5449000014202",,175,140,1.05,1,12
+JUS-MIX-1L,"Mixed Fruit Juice 1L","Mixed fruit juice blend","Juices","5449000014219",,150,120,1.05,1,12
+DOM-PEPR-1L,"Domino's Pepper 1L","Pizza chain exclusive drink","Beverages","5449000214572",,140,110,1.05,1,12
+COZ-ORNG-1L,"Cozy Orange 1L","Orange flavored drink","Beverages","5449000214589",,120,95,1.05,1,12
+COZ-MANG-1L,"Cozy Mango 1L","Mango flavored drink","Beverages","5449000214596",,125,100,1.05,1,12
+COZ-LEMO-1L,"Cozy Lemon 1L","Lemon flavored drink","Beverages","5449000214602",,120,95,1.05,1,12
+COZ-STRW-1L,"Cozy Strawberry 1L","Strawberry flavored drink","Beverages","5449000214619",,125,100,1.05,1,12
+VIM-ORNG-1L,"Vimto Orange 1L","Orange flavored drink","Beverages","5449000214626",,130,105,1.05,1,12
+VIM-MANG-1L,"Vimto Mango 1L","Mango flavored drink","Beverages","5449000214633",,135,110,1.05,1,12
+VIM-GRAP-1L,"Vimto Grape 1L","Grape flavored drink","Beverages","5449000214640",,140,115,1.05,1,12
+VIM-MIX-1L,"Vimto Mixed 1L","Mixed fruit flavored drink","Beverages","5449000214657",,130,105,1.05,1,12
+SCH-MINT-330,"Schweppes Mint 330ml","Mint flavored soda","Beverages","5449000214664",,90,70,0.35,0.33,36
+SCH-GNGR-330,"Schweppes Ginger 330ml","Ginger flavored soda","Beverages","5449000214671",,90,70,0.35,0.33,36
+SCH-TNC-330,"Schweppes Tonic 330ml","Classic tonic water","Beverages","5449000214688",,85,65,0.35,0.33,36
+SCH-BITT-330,"Schweppes Bitter 330ml","Bitter lemon soda","Beverages","5449000214695",,90,70,0.35,0.33,36
+SCH-CLUB-330,"Schweppes Club Soda 330ml","Club soda water","Beverages","5449000214701",,80,60,0.35,0.33,36
+TNG-ORNG-1L,"Tang Orange 1L","Orange drink mix powder","Beverages","5449000214718",,180,145,1.05,1,12
+TNG-MANG-1L,"Tang Mango 1L","Mango drink mix powder","Beverages","5449000214725",,185,150,1.05,1,12
+TNG-LEMO-1L,"Tang Lemon 1L","Lemon drink mix powder","Beverages","5449000214732",,175,140,1.05,1,12
+TNG-STRW-1L,"Tang Strawberry 1L","Strawberry drink mix powder","Beverages","5449000214749",,190,155,1.05,1,12
+MIL-PLN-500,"Plain Milk 500ml","Fresh whole milk","Dairy","5449000214756",,120,95,0.52,0.5,24
+MIL-PLN-1L,"Plain Milk 1L","Fresh whole milk","Dairy","5449000214763",,200,165,1.02,1,12
+YOG-PLN-500,"Plain Yogurt 500ml","Natural yogurt","Dairy","5449000214770",,150,120,0.52,0.5,24
+YOG-STRAW-500,"Strawberry Yogurt 500ml","Strawberry flavored yogurt","Dairy","5449000214787",,160,130,0.52,0.5,24
+YOG-MANG-500,"Mango Yogurt 500ml","Mango flavored yogurt","Dairy","5449000214794",,165,135,0.52,0.5,24
+YOG-MIX-500,"Mixed Fruit Yogurt 500ml","Mixed fruit yogurt","Dairy","5449000214800",,170,140,0.52,0.5,24
+CHOC-MILK-500,"Chocolate Milk 500ml","Chocolate flavored milk","Dairy","5449000214817",,140,110,0.52,0.5,24
+STRAW-MILK-500,"Strawberry Milk 500ml","Strawberry flavored milk","Dairy","5449000214824",,140,110,0.52,0.5,24
+VANIL-MILK-500,"Vanilla Milk 500ml","Vanilla flavored milk","Dairy","5449000214831",,135,105,0.52,0.5,24
