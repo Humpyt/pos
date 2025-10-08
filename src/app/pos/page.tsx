@@ -14,23 +14,17 @@ import {
   Smartphone,
   Building2,
   Percent,
-  Receipt
+  Receipt,
+  AlertTriangle
 } from 'lucide-react'
 import { PageHeader, StatusBadge, EmptyState, LoadingState } from '@/components/shared/DesignSystem'
 import { formatCurrency, generateSaleNumber } from '@/lib/utils'
+import { ProductWithStock } from '@/lib/product-service'
 
-interface Product {
-  id: string
-  name: string
-  sku: string
-  price: number
-  stock: number
-  category: string
-  barcode?: string
-}
+// Use ProductWithStock from product-service instead of local interface
 
 interface CartItem {
-  product: Product
+  product: ProductWithStock
   quantity: number
   totalPrice: number
 }
@@ -44,84 +38,96 @@ interface Customer {
 }
 
 export default function POSPage() {
-  const [products, setProducts] = useState<Product[]>([])
+  const [products, setProducts] = useState<ProductWithStock[]>([])
   const [cart, setCart] = useState<CartItem[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [discount, setDiscount] = useState(0)
   const [paymentMethod, setPaymentMethod] = useState('CASH')
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedBranch, setSelectedBranch] = useState('default') // Default to first branch
+  const [categories, setCategories] = useState<string[]>(['All'])
+  const [selectedCategory, setSelectedCategory] = useState('All')
 
   useEffect(() => {
-    // Simulate fetching products
-    setTimeout(() => {
-      setProducts([
-        {
-          id: '1',
-          name: 'Coca-Cola 1L',
-          sku: 'COC-COLA-1L',
-          price: 4500,
-          stock: 45,
-          category: 'Beverages',
-          barcode: '5449000000996'
-        },
-        {
-          id: '2',
-          name: 'Coca-Cola 500ml',
-          sku: 'COC-COLA-500',
-          price: 2500,
-          stock: 8,
-          category: 'Beverages',
-          barcode: '5449000049185'
-        },
-        {
-          id: '3',
-          name: 'Fanta Orange 1L',
-          sku: 'FAN-ORNG-1L',
-          price: 4200,
-          stock: 67,
-          category: 'Beverages',
-          barcode: '5449000001008'
-        },
-        {
-          id: '4',
-          name: 'Aquafina Water 1L',
-          sku: 'AQV-FINA-1L',
-          price: 2000,
-          stock: 120,
-          category: 'Water',
-          barcode: '5449000001053'
-        },
-        {
-          id: '5',
-          name: 'Mountain Dew Extreme 500ml',
-          sku: 'MTV-EXCT-500',
-          price: 3500,
-          stock: 3,
-          category: 'Energy Drinks',
-          barcode: '5449000132521'
-        },
-        {
-          id: '6',
-          name: 'Fresh Apple Juice 1L',
-          sku: 'JUS-APPL-1L',
-          price: 5500,
-          stock: 25,
-          category: 'Juices',
-          barcode: '5449000014141'
+    loadProducts()
+    loadCategories()
+  }, [selectedBranch])
+
+  const loadCategories = async () => {
+    try {
+      const response = await fetch('/api/categories')
+      if (response.ok) {
+        const result = await response.json()
+        if (result.success) {
+          setCategories(['All', ...result.data])
         }
-      ])
+      }
+    } catch (error) {
+      console.error('Error loading categories:', error)
+    }
+  }
+
+  const loadProducts = async (searchQuery?: string) => {
+    try {
+      setIsLoading(true)
+      setError(null)
+
+      const params = new URLSearchParams()
+      if (searchQuery) {
+        params.append('search', searchQuery)
+      }
+      if (selectedBranch && selectedBranch !== 'default') {
+        params.append('branchId', selectedBranch)
+      }
+
+      const response = await fetch(`/api/products?${params.toString()}`)
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch products')
+      }
+
+      const result = await response.json()
+
+      if (result.success) {
+        setProducts(result.data)
+        if (result.branchId && result.branchId !== selectedBranch) {
+          setSelectedBranch(result.branchId)
+        }
+      } else {
+        throw new Error(result.error || 'Failed to load products')
+      }
+    } catch (error) {
+      console.error('Error loading products:', error)
+      setError('Failed to load products. Please try again.')
+      // Fallback to empty products array
+      setProducts([])
+    } finally {
       setIsLoading(false)
-    }, 500)
-  }, [])
+    }
+  }
 
-  const filteredProducts = products.filter(product =>
-    product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (product.barcode && product.barcode.includes(searchTerm))
-  )
+  // Debounced search function
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchTerm) {
+        loadProducts(searchTerm)
+      } else {
+        loadProducts()
+      }
+    }, 300)
 
-  const addToCart = (product: Product) => {
+    return () => clearTimeout(timer)
+  }, [searchTerm, selectedBranch])
+
+  // Filter products by selected category
+  const filteredProducts = products.filter(product => {
+    if (selectedCategory === 'All') return true
+    return product.category === selectedCategory
+  })
+
+  const addToCart = (product: ProductWithStock) => {
     setCart(prevCart => {
       const existingItem = prevCart.find(item => item.product.id === product.id)
 
@@ -197,6 +203,22 @@ export default function POSPage() {
     )
   }
 
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <EmptyState
+          icon={AlertTriangle}
+          title="Error Loading Products"
+          description={error}
+          action={{
+            label: "Try Again",
+            onClick: () => loadProducts()
+          }}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="h-screen bg-surface flex flex-col">
       {/* Header */}
@@ -243,10 +265,15 @@ export default function POSPage() {
 
               {/* Categories */}
               <div className="flex space-x-2 overflow-x-auto">
-                {['All', 'Beverages', 'Water', 'Energy Drinks', 'Juices'].map((category) => (
+                {categories.map((category) => (
                   <button
                     key={category}
-                    className="px-4 py-2 bg-card border border-border rounded-lg hover:bg-primary hover:text-primary-foreground transition-colors text-sm font-medium whitespace-nowrap"
+                    onClick={() => setSelectedCategory(category)}
+                    className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium whitespace-nowrap ${
+                      selectedCategory === category
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-card border border-border hover:bg-primary hover:text-primary-foreground'
+                    }`}
                   >
                     {category}
                   </button>
@@ -261,7 +288,7 @@ export default function POSPage() {
                   <EmptyState
                     icon={Package}
                     title="No products found"
-                    description="Try adjusting your search terms"
+                    description={searchTerm ? "Try adjusting your search terms" : "No products available in inventory"}
                   />
                 </div>
               ) : (
