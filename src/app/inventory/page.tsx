@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -28,6 +27,16 @@ import {
   Plus
 } from 'lucide-react'
 import Link from 'next/link'
+import {
+  StatCard,
+  PageHeader,
+  Card,
+  EmptyState,
+  LoadingState,
+  ActionCard,
+  StatusBadge
+} from '@/components/shared/DesignSystem'
+import { formatCurrency } from '@/lib/utils'
 
 interface InventoryItem {
   id: string
@@ -41,7 +50,7 @@ interface InventoryItem {
     id: string
     name: string
     unitPrice: number
-  }
+  } | null
   branch: {
     id: string
     name: string
@@ -67,6 +76,22 @@ export default function InventoryPage() {
 
   useEffect(() => {
     loadInventory()
+
+    // Listen for inventory updates from POS transactions
+    const handleInventoryUpdate = (event: CustomEvent) => {
+      console.log('Inventory update received:', event.detail)
+
+      // Reload inventory to get the latest data
+      loadInventory(selectedBranch)
+    }
+
+    // Add event listener
+    window.addEventListener('inventoryUpdate', handleInventoryUpdate as EventListener)
+
+    // Cleanup event listener on unmount
+    return () => {
+      window.removeEventListener('inventoryUpdate', handleInventoryUpdate as EventListener)
+    }
   }, [])
 
   const loadInventory = async (branchId?: string, lowStock?: boolean) => {
@@ -130,14 +155,15 @@ export default function InventoryPage() {
     lowStockItems: inventory.filter(item => item.quantity <= item.minStock).length,
     expiringItems: 0, // TODO: Calculate based on batch expiry dates
     expiredItems: 0, // TODO: Calculate based on batch expiry dates
-    totalValue: inventory.reduce((sum, item) => sum + (item.quantity * item.variation.unitPrice), 0)
+    totalValue: inventory.reduce((sum, item) => sum + (item.quantity * (item.variation?.unitPrice || 0)), 0)
   }
 
   // Get unique categories
   const categories = Array.from(new Set(inventory.map(item => item.product.category)))
 
   // Get unique branches
-  const branches = Array.from(new Set(inventory.map(item => ({ id: item.branch.id, name: item.branch.name }))))
+  const branches = Array.from(new Set(inventory.map(item => JSON.stringify(item.branch))))
+    .map(branchStr => JSON.parse(branchStr))
 
   const filteredInventory = inventory.filter(item => {
     const matchesSearch = !searchTerm ||
@@ -164,215 +190,211 @@ export default function InventoryPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-primary">Inventory Management</h1>
-          <p className="text-muted-foreground">Manage stock levels across all branches</p>
+    <div className="space-y-6">
+      {/* Page Header */}
+      <PageHeader
+        title="Inventory Management"
+        subtitle="Manage stock levels across all branches"
+      >
+        <div className="flex space-x-3">
+          <ActionCard
+            title="Stock Adjustments"
+            icon={BarChart3}
+            color="bg-blue-500"
+            description="View stock history"
+          />
+          <ActionCard
+            title="Transfer Stock"
+            icon={Package}
+            color="bg-purple-500"
+            description="Move between branches"
+          />
+          <ActionCard
+            title="Batch Management"
+            icon={Plus}
+            color="bg-emerald-500"
+            description="Manage batches"
+          />
         </div>
-        <div className="flex gap-2">
-          <Link href="/inventory/adjustments">
-            <Button variant="outline">
-              <BarChart3 className="mr-2 h-4 w-4" />
-              Stock Adjustments
-            </Button>
-          </Link>
-          <Link href="/inventory/transfer">
-            <Button variant="outline">
-              <Package className="mr-2 h-4 w-4" />
-              Transfer Stock
-            </Button>
-          </Link>
-          <Link href="/inventory/batches">
-            <Button variant="outline">
-              <Plus className="mr-2 h-4 w-4" />
-              Batch Management
-            </Button>
-          </Link>
-        </div>
+      </PageHeader>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <StatCard
+          title="Total Items"
+          value={summaryStats.totalItems.toLocaleString()}
+          icon={Package}
+          color="bg-blue-500"
+          change="Across all branches"
+          changeType="neutral"
+        />
+
+        <StatCard
+          title="Low Stock Items"
+          value={summaryStats.lowStockItems.toLocaleString()}
+          icon={AlertTriangle}
+          color="bg-yellow-500"
+          change={summaryStats.lowStockItems > 0 ? "Needs attention" : "Well stocked"}
+          changeType={summaryStats.lowStockItems > 0 ? "warning" : "positive"}
+        />
+
+        <StatCard
+          title="Expiring Soon"
+          value={summaryStats.expiringItems.toLocaleString()}
+          icon={Calendar}
+          color="bg-orange-500"
+          change={summaryStats.expiringItems > 0 ? "Check expiry dates" : "No expiry concerns"}
+          changeType={summaryStats.expiringItems > 0 ? "warning" : "positive"}
+        />
+
+        <StatCard
+          title="Total Value"
+          value={formatCurrency(summaryStats.totalValue)}
+          icon={TrendingUp}
+          color="bg-emerald-500"
+          change="Current inventory value"
+          changeType="neutral"
+        />
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Items</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{summaryStats.totalItems}</div>
-            <p className="text-xs text-muted-foreground">Across all branches</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-orange-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-500">{summaryStats.lowStockItems}</div>
-            <p className="text-xs text-muted-foreground">Need restocking</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
-            <Calendar className="h-4 w-4 text-yellow-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-500">{summaryStats.expiringItems}</div>
-            <p className="text-xs text-muted-foreground">Within 30 days</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Value</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">KES {summaryStats.totalValue.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">Current inventory value</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
-            Filters
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Search</label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                <Input
-                  placeholder="Search products..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">Category</label>
-              <select
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                className="w-full p-2 border border-border rounded-md bg-card"
-              >
-                <option value="all">All Categories</option>
-                {categories.map(category => (
-                  <option key={category} value={category}>{category}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">Branch</label>
-              <select
-                value={selectedBranch}
-                onChange={(e) => setSelectedBranch(e.target.value)}
-                className="w-full p-2 border border-border rounded-md bg-card"
-              >
-                <option value="all">All Branches</option>
-                {branches.map(branch => (
-                  <option key={branch.id} value={branch.id}>{branch.name}</option>
-                ))}
-              </select>
+      {/* Search and Filter */}
+      <div className="bg-card rounded-xl border border-border p-6">
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold text-primary mb-2">Inventory Items</h2>
+          <p className="text-secondary text-sm">
+            Manage stock levels, track inventory across branches, and monitor low stock alerts
+          </p>
+        </div>
+        <div className="flex space-x-4 mb-6">
+          <div className="flex-1">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted h-4 w-4" />
+              <input
+                type="text"
+                placeholder="Search products by name, SKU, or category..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 input rounded-lg border border-input-border focus:border-primary focus:ring-2 focus:ring-primary"
+              />
             </div>
           </div>
-        </CardContent>
-      </Card>
+          <div className="flex space-x-2">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="px-4 py-2 bg-card border border-border rounded-lg hover:border-primary hover:bg-surface transition-colors"
+            >
+              <option value="all">All Categories</option>
+              {categories.map(category => (
+                <option key={category} value={category}>{category}</option>
+              ))}
+            </select>
+            <select
+              value={selectedBranch}
+              onChange={(e) => setSelectedBranch(e.target.value)}
+              className="px-4 py-2 bg-card border border-border rounded-lg hover:border-primary hover:bg-surface transition-colors"
+            >
+              <option value="all">All Branches</option>
+              {branches.map(branch => (
+                <option key={branch.id} value={branch.id}>{branch.name}</option>
+              ))}
+            </select>
+            <button className="flex items-center px-4 py-2 bg-card border border-border rounded-lg hover:border-primary hover:bg-surface transition-colors">
+              <Filter className="h-4 w-4 mr-2" />
+              Filters
+            </button>
+          </div>
+        </div>
 
-      {/* Inventory Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Inventory Items</CardTitle>
-        </CardHeader>
-        <CardContent>
+        {/* Inventory Table */}
+        <div className="rounded-lg border border-border overflow-hidden">
           {isLoading ? (
             <div className="flex items-center justify-center h-64">
-              <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
+              <LoadingState />
             </div>
           ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead>SKU</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Branch</TableHead>
-                    <TableHead>Stock</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Unit Price</TableHead>
-                    <TableHead>Total Value</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredInventory.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={9} className="text-center py-8">
-                        No inventory items found
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredInventory.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-medium">
-                          <div>
-                            <div className="font-semibold">{item.product.name}</div>
-                            <div className="text-sm text-muted-foreground">{item.variation.name}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell>{item.product.sku}</TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">{item.product.category}</Badge>
-                        </TableCell>
-                        <TableCell>{item.branch.name}</TableCell>
-                        <TableCell>
-                          <div className={item.quantity <= item.minStock ? 'text-red-600 font-semibold' : ''}>
-                            {item.quantity}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {item.quantity <= item.minStock ? (
-                            <Badge variant="destructive">Low Stock</Badge>
-                          ) : (
-                            <Badge variant="default">In Stock</Badge>
+            <table className="w-full">
+              <thead className="bg-surface">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Product</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">SKU</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Category</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Branch</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Stock</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Unit Price</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Total Value</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-secondary uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-card divide-y divide-border">
+                {filteredInventory.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="text-center py-8">
+                      <EmptyState
+                        icon={Package}
+                        title="No inventory items found"
+                        description={searchTerm || selectedCategory !== 'all' || selectedBranch !== 'all' ? 'Try adjusting your filters or search terms' : 'Inventory will appear here when products are added'}
+                      />
+                    </td>
+                  </tr>
+                ) : (
+                  filteredInventory.map((item) => (
+                    <tr key={item.id} className="hover:bg-surface transition-colors">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex flex-col">
+                          <span className="font-medium text-primary">{item.product.name}</span>
+                          {item.variation?.name && (
+                            <span className="text-sm text-secondary">{item.variation.name}</span>
                           )}
-                        </TableCell>
-                        <TableCell>KES {item.variation.unitPrice.toLocaleString()}</TableCell>
-                        <TableCell>KES {(item.quantity * item.variation.unitPrice).toLocaleString()}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button variant="ghost" size="sm">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary">{item.product.sku}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-surface border border-border">
+                          {item.product.category}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary">{item.branch.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex flex-col">
+                          <span className={`font-medium ${item.quantity <= item.minStock ? 'text-red-600' : 'text-primary'}`}>
+                            {item.quantity}
+                          </span>
+                          <span className="text-xs text-secondary">Min: {item.minStock}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <StatusBadge
+                          status={item.quantity <= item.minStock ? (item.quantity === 0 ? 'error' : 'warning') : 'success'}
+                        >
+                          {item.quantity === 0 ? 'Out of Stock' : item.quantity <= item.minStock ? 'Low Stock' : 'In Stock'}
+                        </StatusBadge>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-primary">
+                        {formatCurrency(item.variation?.unitPrice || 0)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-primary">
+                        {formatCurrency(item.quantity * (item.variation?.unitPrice || 0))}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                        <div className="flex justify-end space-x-2">
+                          <button className="p-2 bg-card border border-border rounded hover:bg-surface transition-colors">
+                            <Eye className="h-4 w-4 text-secondary" />
+                          </button>
+                          <button className="p-2 bg-card border border-border rounded hover:bg-surface transition-colors">
+                            <Edit className="h-4 w-4 text-secondary" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   )
 }

@@ -9,39 +9,61 @@ import { cn } from '@/lib/utils'
 interface StatCardProps {
   title: string
   value: string | number
-  icon: React.ComponentType<any>
-  color: string
+  icon: React.ComponentType<any> | React.ReactElement
+  description?: string
+  color?: string
   change?: string
-  changeType?: 'positive' | 'negative' | 'neutral'
+  changeType?: 'positive' | 'negative' | 'warning' | 'neutral'
+  trend?: {
+    value: 'positive' | 'negative' | 'warning' | 'neutral'
+    label: string
+  }
 }
 
-export function StatCard({ title, value, icon: Icon, color, change, changeType }: StatCardProps) {
+export function StatCard({ title, value, icon, description, color, change, changeType, trend }: StatCardProps) {
+  let IconComponent;
+
+  if (React.isValidElement(icon)) {
+    // It's already a JSX element, just use it directly
+    IconComponent = icon;
+  } else if (typeof icon === 'function') {
+    // It's a React component, create element
+    IconComponent = React.createElement(icon as React.ComponentType<any>, { className: "h-6 w-6 text-white" });
+  } else {
+    // Fallback for invalid icon types
+    IconComponent = <div className="h-6 w-6 bg-white/20 rounded" />;
+  }
+
   return (
     <div className="bg-card rounded-xl shadow-sm border border-border p-6 hover:shadow-md transition-shadow">
       <div className="flex items-center justify-between">
         <div className="flex items-center">
-          <div className={cn("p-3 rounded-xl", color)}>
-            <Icon className="h-6 w-6 text-white" />
+          <div className={cn("p-3 rounded-xl", color || "bg-blue-500")}>
+            {IconComponent}
           </div>
           <div className="ml-4">
             <p className="text-sm font-medium text-secondary">{title}</p>
             <p className="text-2xl font-bold text-primary">{value}</p>
+            {description && (
+              <p className="text-xs text-muted mt-1">{description}</p>
+            )}
           </div>
         </div>
       </div>
-      {change && (
+      {(change || trend) && (
         <div className="mt-4">
           <div className="flex items-center text-sm">
-            {changeType === 'positive' && (
-              <span className="text-emerald-600 font-medium">{change}</span>
+            {(change || trend?.label) && (
+              <span className={cn(
+                "font-medium",
+                changeType === 'positive' || trend?.value === 'positive' ? "text-emerald-600" :
+                changeType === 'negative' || trend?.value === 'negative' ? "text-red-600" :
+                changeType === 'warning' || trend?.value === 'warning' ? "text-orange-600" :
+                "text-muted"
+              )}>
+                {change || trend?.label}
+              </span>
             )}
-            {changeType === 'negative' && (
-              <span className="text-red-600 font-medium">{change}</span>
-            )}
-            {changeType === 'neutral' && (
-              <span className="text-secondary font-medium">{change}</span>
-            )}
-            <span className="text-muted ml-2">from last month</span>
           </div>
         </div>
       )}
@@ -53,22 +75,44 @@ export function StatCard({ title, value, icon: Icon, color, change, changeType }
 interface PageHeaderProps {
   title: string
   subtitle?: string
-  children?: React.ReactNode
+  breadcrumbs?: Array<{ label: string; href: string }>
+  actions?: React.ReactNode
 }
 
-export function PageHeader({ title, subtitle, children }: PageHeaderProps) {
+export function PageHeader({ title, subtitle, breadcrumbs, actions }: PageHeaderProps) {
   return (
-    <div className="mb-8">
+    <div className="px-6 py-4 bg-white border-b border-border">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-primary">{title}</h1>
+          {breadcrumbs && breadcrumbs.length > 0 && (
+            <nav className="flex mb-2" aria-label="Breadcrumb">
+              <ol className="inline-flex items-center space-x-1 md:space-x-3">
+                {breadcrumbs.map((breadcrumb, index) => (
+                  <li key={index} className="inline-flex items-center">
+                    {index > 0 && (
+                      <svg className="w-3 h-3 text-gray-400 mx-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                    <a
+                      href={breadcrumb.href}
+                      className="text-sm font-medium text-gray-700 hover:text-blue-600 md:ml-2"
+                    >
+                      {breadcrumb.label}
+                    </a>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          )}
+          <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
           {subtitle && (
             <p className="text-secondary mt-1">{subtitle}</p>
           )}
         </div>
-        {children && (
+        {actions && (
           <div className="flex items-center space-x-4">
-            {children}
+            {actions}
           </div>
         )}
       </div>
@@ -185,6 +229,29 @@ export function EmptyState({ icon: Icon, title, description, action }: EmptyStat
           {action.label}
         </button>
       )}
+    </div>
+  )
+}
+
+// Card Component
+interface CardProps {
+  title?: React.ReactNode
+  content?: React.ReactNode
+  children?: React.ReactNode
+  className?: string
+}
+
+export function Card({ title, content, children, className }: CardProps) {
+  return (
+    <div className={cn("bg-card rounded-xl shadow-sm border border-border", className)}>
+      {title && (
+        <div className="px-6 py-4 border-b border-border">
+          {title}
+        </div>
+      )}
+      <div className="px-6 py-4">
+        {content || children}
+      </div>
     </div>
   )
 }

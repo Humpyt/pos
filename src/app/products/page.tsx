@@ -14,123 +14,62 @@ import {
 } from 'lucide-react'
 import { PageHeader, DataTable, StatusBadge, EmptyState, LoadingState, ActionCard, StatCard } from '@/components/shared/DesignSystem'
 import { formatCurrency } from '@/lib/utils'
+import { ProductWithStock } from '@/lib/product-service'
 
-interface Product {
-  id: string
-  sku: string
-  name: string
-  category: string
-  barcode?: string
-  price: number
-  cost: number
-  stock: number
-  minStock: number
-  isActive: boolean
-  variations?: ProductVariation[]
-}
-
-interface ProductVariation {
-  id: string
-  name: string
-  unitPrice: number
-  costPrice: number
-  stock: number
-}
+// Use ProductWithStock from product-service instead of local interface
 
 export default function ProductsPage() {
-  const [products, setProducts] = useState<Product[]>([])
+  const [products, setProducts] = useState<ProductWithStock[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // Simulate fetching products
-    setTimeout(() => {
-      setProducts([
-        {
-          id: '1',
-          sku: 'COC-COLA-1L',
-          name: 'Coca-Cola 1L',
-          category: 'Beverages',
-          barcode: '5449000000996',
-          price: 4500,
-          cost: 3800,
-          stock: 45,
-          minStock: 10,
-          isActive: true,
-          variations: [
-            { id: '1-1', name: '1L Bottle', unitPrice: 4500, costPrice: 3800, stock: 45 }
-          ]
-        },
-        {
-          id: '2',
-          sku: 'COC-COLA-500',
-          name: 'Coca-Cola 500ml',
-          category: 'Beverages',
-          barcode: '5449000049185',
-          price: 2500,
-          cost: 2100,
-          stock: 8,
-          minStock: 10,
-          isActive: true,
-          variations: [
-            { id: '2-1', name: '500ml Bottle', unitPrice: 2500, costPrice: 2100, stock: 8 }
-          ]
-        },
-        {
-          id: '3',
-          sku: 'FAN-ORNG-1L',
-          name: 'Fanta Orange 1L',
-          category: 'Beverages',
-          barcode: '5449000001008',
-          price: 4200,
-          cost: 3500,
-          stock: 67,
-          minStock: 10,
-          isActive: true,
-          variations: [
-            { id: '3-1', name: '1L Bottle', unitPrice: 4200, costPrice: 3500, stock: 67 }
-          ]
-        },
-        {
-          id: '4',
-          sku: 'AQV-FINA-1L',
-          name: 'Aquafina Water 1L',
-          category: 'Water',
-          barcode: '5449000001053',
-          price: 2000,
-          cost: 1600,
-          stock: 120,
-          minStock: 20,
-          isActive: true,
-          variations: [
-            { id: '4-1', name: '1L Bottle', unitPrice: 2000, costPrice: 1600, stock: 120 }
-          ]
-        },
-        {
-          id: '5',
-          sku: 'MTV-EXCT-500',
-          name: 'Mountain Dew Extreme 500ml',
-          category: 'Energy Drinks',
-          barcode: '5449000132521',
-          price: 3500,
-          cost: 2900,
-          stock: 3,
-          minStock: 10,
-          isActive: true,
-          variations: [
-            { id: '5-1', name: '500ml Bottle', unitPrice: 3500, costPrice: 2900, stock: 3 }
-          ]
-        }
-      ])
-      setIsLoading(false)
-    }, 1000)
+    loadProducts()
   }, [])
 
-  const filteredProducts = products.filter(product =>
-    product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.category.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const loadProducts = async (searchQuery?: string) => {
+    try {
+      setIsLoading(true)
+      setError(null)
+
+      const params = new URLSearchParams()
+      if (searchQuery) {
+        params.append('search', searchQuery)
+      }
+
+      const response = await fetch(`/api/products?${params.toString()}`)
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch products')
+      }
+
+      const result = await response.json()
+
+      if (result.success) {
+        setProducts(result.data)
+      } else {
+        throw new Error(result.error || 'Failed to load products')
+      }
+    } catch (error) {
+      console.error('Error loading products:', error)
+      setError('Failed to load products. Please try again.')
+      setProducts([])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Debounced search function
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadProducts(searchTerm)
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [searchTerm])
+
+  const filteredProducts = products // Already filtered by API
 
   const getStockStatus = (stock: number, minStock: number) => {
     if (stock === 0) return { status: 'Out of Stock', variant: 'destructive' as const }
@@ -147,6 +86,22 @@ export default function ProductsPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <LoadingState />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <EmptyState
+          icon={AlertTriangle}
+          title="Error Loading Products"
+          description={error}
+          action={{
+            label: "Try Again",
+            onClick: () => loadProducts()
+          }}
+        />
       </div>
     )
   }

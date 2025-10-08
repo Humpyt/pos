@@ -100,7 +100,8 @@ export async function GET(request: NextRequest) {
         },
         variation: item.variation ? {
           id: item.variation.id,
-          name: item.variation.name
+          name: item.variation.name,
+          unitPrice: mainVariation?.unitPrice || 0
         } : null,
         batch: item.batch ? {
           id: item.batch.id,
@@ -114,7 +115,10 @@ export async function GET(request: NextRequest) {
         unitCost: mainVariation?.costPrice || 0,
         totalValue: item.quantity * (mainVariation?.costPrice || 0),
         lastUpdated: item.lastUpdated.toISOString(),
-        branch: item.branch.name
+        branch: {
+          id: item.branch.id,
+          name: item.branch.name
+        }
       }
     })
 

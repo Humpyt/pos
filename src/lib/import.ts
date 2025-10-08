@@ -75,11 +75,11 @@ export class ProductImportService {
           // Create product with variation
           const product = await prisma.product.create({
             data: {
-              sku: productRow.SKU,
-              name: productRow.Name,
+              sku: String(productRow.SKU),
+              name: String(productRow.Name),
               description: productRow.Description || `${productRow.Name} - ${productRow.Category}`,
               categoryId,
-              barcode: productRow.Barcode,
+              barcode: productRow.Barcode ? String(productRow.Barcode) : null,
               image: productRow.Image,
               variations: {
                 create: {

@@ -136,8 +136,37 @@ export class ProductService {
           inventory: branchId ? {
             where: {
               branchId
+            },
+            select: {
+              id: true,
+              quantity: true,
+              minStock: true,
+              maxStock: true,
+              reorderPoint: true,
+              lastUpdated: true,
+              branch: {
+                select: {
+                  id: true,
+                  name: true
+                }
+              }
             }
-          } : true,
+          } : {
+            select: {
+              id: true,
+              quantity: true,
+              minStock: true,
+              maxStock: true,
+              reorderPoint: true,
+              lastUpdated: true,
+              branch: {
+                select: {
+                  id: true,
+                  name: true
+                }
+              }
+            }
+          },
           batches: {
             where: {
               quantity: {
@@ -265,9 +294,30 @@ export class ProductService {
               minStock: true,
               maxStock: true,
               reorderPoint: true,
-              lastUpdated: true
+              lastUpdated: true,
+              branch: {
+                select: {
+                  id: true,
+                  name: true
+                }
+              }
             }
-          } : true
+          } : {
+            select: {
+              id: true,
+              quantity: true,
+              minStock: true,
+              maxStock: true,
+              reorderPoint: true,
+              lastUpdated: true,
+              branch: {
+                select: {
+                  id: true,
+                  name: true
+                }
+              }
+            }
+          }
         },
         orderBy: {
           name: 'asc'

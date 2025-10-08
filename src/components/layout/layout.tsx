@@ -41,6 +41,9 @@ export default function Layout({ children }: LayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const pathname = usePathname()
 
+  // Debug: Log current pathname
+  console.log('Current pathname:', pathname)
+
   return (
     <div className="min-h-screen bg-surface lg:flex">
       {/* Mobile sidebar backdrop */}
@@ -57,10 +60,13 @@ export default function Layout({ children }: LayoutProps) {
         sidebarCollapsed ? "w-16" : "w-64",
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
-        <div className="flex items-center justify-between h-16 px-4 border-b border-border">
+        <div className={cn(
+          "flex items-center border-b border-border transition-all duration-300",
+          sidebarCollapsed ? "justify-center px-4" : "justify-between px-4"
+        )}>
           <h1 className={cn(
             "text-xl font-bold text-primary flex items-center transition-all duration-300",
-            sidebarCollapsed ? "opacity-0 w-0" : "opacity-100"
+            sidebarCollapsed ? "opacity-0 w-0 hidden" : "opacity-100"
           )}>
             <Store className="h-6 w-6 mr-2 text-primary" />
             POS System
@@ -68,7 +74,7 @@ export default function Layout({ children }: LayoutProps) {
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="hidden lg:flex items-center justify-center w-8 h-8 rounded-md text-secondary hover:text-primary hover:bg-surface transition-colors"
+              className="lg:flex items-center justify-center w-8 h-8 rounded-md text-secondary hover:text-primary hover:bg-surface transition-all duration-300"
               title={sidebarCollapsed ? "Expand Sidebar (Ctrl+B)" : "Collapse Sidebar (Ctrl+B)"}
             >
               {sidebarCollapsed ? (
@@ -79,7 +85,10 @@ export default function Layout({ children }: LayoutProps) {
             </button>
             <button
               onClick={() => setSidebarOpen(false)}
-              className="lg:hidden p-2 rounded-md text-secondary hover:text-primary hover:bg-surface transition-colors"
+              className={cn(
+                "p-2 rounded-md text-secondary hover:text-primary hover:bg-surface transition-colors",
+                sidebarCollapsed ? "hidden" : "lg:hidden"
+              )}
             >
               <X className="h-6 w-6" />
             </button>
@@ -95,13 +104,14 @@ export default function Layout({ children }: LayoutProps) {
                   key={item.name}
                   href={item.href}
                   className={cn(
-                    "flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-all group",
+                    "flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-all group cursor-pointer",
                     isActive
                       ? "bg-primary text-primary-foreground shadow-sm"
                       : "text-secondary hover:bg-surface hover:text-primary",
                     sidebarCollapsed ? "justify-center" : "justify-start"
                   )}
                   title={sidebarCollapsed ? item.name : undefined}
+                  onClick={() => console.log(`Navigating to: ${item.name} (${item.href})`)}
                 >
                   <item.icon className={cn(
                     "h-5 w-5 transition-all duration-300",

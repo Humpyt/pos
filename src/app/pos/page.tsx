@@ -171,7 +171,7 @@ export default function POSPage() {
   const taxAmount = (subtotal - discountAmount) * 0.16
   const total = subtotal - discountAmount + taxAmount
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (cart.length === 0) return
 
     const saleData = {
@@ -182,17 +182,51 @@ export default function POSPage() {
       tax: taxAmount,
       total,
       paymentMethod,
-      customer: selectedCustomer
+      customer: selectedCustomer,
+      branchId: selectedBranch
     }
 
-    console.log('Processing sale:', saleData)
-    alert(`Sale completed successfully!\nTotal: ${formatCurrency(total)}`)
+    try {
+      const response = await fetch('/api/sales', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(saleData),
+      })
 
-    // Reset cart
-    setCart([])
-    setDiscount(0)
-    setPaymentMethod('CASH')
-    setSelectedCustomer(null)
+      const result = await response.json()
+
+      if (result.success) {
+        alert(`Sale completed successfully!\nSale Number: ${saleData.saleNumber}\nTotal: ${formatCurrency(total)}`)
+
+        // Reset cart
+        setCart([])
+        setDiscount(0)
+        setPaymentMethod('CASH')
+        setSelectedCustomer(null)
+
+        // Reload products to get updated inventory
+        await loadProducts()
+
+        // Trigger inventory update event
+        window.dispatchEvent(new CustomEvent('inventoryUpdate', {
+          detail: {
+            type: 'sale_completed',
+            timestamp: new Date().toISOString(),
+            items: cart.map(item => ({
+              productId: item.product.id,
+              quantitySold: item.quantity
+            }))
+          }
+        }))
+      } else {
+        throw new Error(result.error || 'Failed to process sale')
+      }
+    } catch (error) {
+      console.error('Error processing sale:', error)
+      alert(`Error: ${error instanceof Error ? error.message : 'Failed to process sale'}`)
+    }
   }
 
   if (isLoading) {
