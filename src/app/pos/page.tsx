@@ -9,17 +9,27 @@ import {
   X,
   Package,
   User,
-  CreditCard,
   DollarSign,
   Smartphone,
-  Building2,
   Percent,
   Receipt,
-  AlertTriangle
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  Pause
 } from 'lucide-react'
 import { PageHeader, StatusBadge, EmptyState, LoadingState } from '@/components/shared/DesignSystem'
 import { formatCurrency, generateSaleNumber } from '@/lib/utils'
 import { ProductWithStock } from '@/lib/product-service'
+import { updateManager } from '@/lib/update-manager'
+import POSCustomerSearch from '@/components/pos/POSCustomerSearch'
+import { POSControlPanel } from '@/components/pos/POSControlPanel'
+import { OfflineStatus } from '@/components/pos/OfflineStatus'
+import { offlineManager } from '@/lib/offline-manager'
+import { shiftManager } from '@/lib/shift-manager'
+import { cashDrawer } from '@/lib/cash-drawer'
+import { orderHold } from '@/lib/order-hold'
+import { receiptPrinter } from '@/lib/receipt-printer'
 
 // Use ProductWithStock from product-service instead of local interface
 
@@ -35,7 +45,12 @@ interface Customer {
   name: string
   email?: string
   phone?: string
-  customerType: string
+  customerType: 'WALK_IN' | 'REGULAR' | 'WHOLESALE' | 'CORPORATE'
+  totalSpent: number
+  totalSales: number
+  averageOrderValue: number
+  lastPurchaseDate?: string
+  isActive: boolean
 }
 
 export default function POSPage() {
@@ -47,14 +62,45 @@ export default function POSPage() {
   const [paymentMethod, setPaymentMethod] = useState('CASH')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedBranch, setSelectedBranch] = useState('default') // Default to first branch
+  const [selectedBranch, setSelectedBranch] = useState('cmgq8tx590000lras30r8autd') // Default to Branch A (Main Branch - Nairobi)
   const [categories, setCategories] = useState<string[]>(['All'])
   const [selectedCategory, setSelectedCategory] = useState('All')
+  const [showCustomerSearch, setShowCustomerSearch] = useState(false)
+
+  // New POS functionality state
+  const [currentShift, setCurrentShift] = useState(shiftManager.getCurrentShift())
+  const [cashDrawerState, setCashDrawerState] = useState(cashDrawer.getState())
+  const [offlineStatus, setOfflineStatus] = useState(offlineManager.getSyncStatus())
+  const [showHoldOrderDialog, setShowHoldOrderDialog] = useState(false)
+  const [holdOrderNotes, setHoldOrderNotes] = useState('')
 
   useEffect(() => {
     loadProducts()
     loadCategories()
+
+    // Initialize POS systems
+    initializePOSSystems()
+
+    // Set up periodic status updates
+    const statusInterval = setInterval(() => {
+      setCurrentShift(shiftManager.getCurrentShift())
+      setCashDrawerState(cashDrawer.getState())
+      setOfflineStatus(offlineManager.getSyncStatus())
+    }, 1000)
+
+    return () => clearInterval(statusInterval)
   }, [selectedBranch])
+
+  const initializePOSSystems = async () => {
+    // Cache products for offline use
+    await offlineManager.cacheProducts(selectedBranch)
+
+    // Check if shift needs to be opened
+    const activeShift = shiftManager.getCurrentShift()
+    if (!activeShift) {
+      console.log('No active shift found - ready to open new shift')
+    }
+  }
 
   const loadCategories = async () => {
     try {
@@ -75,34 +121,49 @@ export default function POSPage() {
       setIsLoading(true)
       setError(null)
 
-      const params = new URLSearchParams()
-      if (searchQuery) {
-        params.append('search', searchQuery)
-      }
-      if (selectedBranch && selectedBranch !== 'default') {
-        params.append('branchId', selectedBranch)
-      }
+      // Try online API first
+      if (offlineStatus.isOnline) {
+        try {
+          const params = new URLSearchParams()
+          if (searchQuery) {
+            params.append('search', searchQuery)
+          }
+          if (selectedBranch && selectedBranch !== 'default') {
+            params.append('branchId', selectedBranch)
+          }
 
-      const response = await fetch(`/api/products?${params.toString()}`)
+          const response = await fetch(`/api/products?${params.toString()}`)
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch products')
-      }
-
-      const result = await response.json()
-
-      if (result.success) {
-        setProducts(result.data)
-        if (result.branchId && result.branchId !== selectedBranch) {
-          setSelectedBranch(result.branchId)
+          if (response.ok) {
+            const result = await response.json()
+            if (result.success) {
+              setProducts(result.data)
+              if (result.branchId && result.branchId !== selectedBranch) {
+                setSelectedBranch(result.branchId)
+              }
+              return
+            }
+          }
+        } catch (apiError) {
+          console.log('API failed, falling back to offline mode')
         }
-      } else {
-        throw new Error(result.error || 'Failed to load products')
+      }
+
+      // Fallback to offline mode
+      console.log('Loading products from offline cache')
+      const cachedProducts = searchQuery
+        ? offlineManager.searchCachedProducts(searchQuery, selectedBranch)
+        : offlineManager.getCachedProducts().filter(p =>
+            !selectedBranch || selectedBranch === 'default' || p.stock.branchId === selectedBranch
+          )
+
+      setProducts(cachedProducts)
+      if (cachedProducts.length === 0) {
+        setError('No products available. Please check your connection.')
       }
     } catch (error) {
       console.error('Error loading products:', error)
       setError('Failed to load products. Please try again.')
-      // Fallback to empty products array
       setProducts([])
     } finally {
       setIsLoading(false)
@@ -185,8 +246,56 @@ export default function POSPage() {
 
   const subtotal = cart.reduce((sum, item) => sum + item.totalPrice, 0)
   const discountAmount = subtotal * (discount / 100)
-  const taxAmount = (subtotal - discountAmount) * 0.16
-  const total = subtotal - discountAmount + taxAmount
+  // Tax deactivated - setting tax to 0
+  const taxAmount = 0
+  const total = subtotal - discountAmount
+
+  const handleHoldOrder = () => {
+    if (cart.length === 0) {
+      alert('Cannot hold an empty cart')
+      return
+    }
+
+    setShowHoldOrderDialog(true)
+  }
+
+  const confirmHoldOrder = () => {
+    try {
+      const heldOrderItems = cart.map(item => ({
+        product: item.product,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        totalPrice: item.totalPrice
+      }))
+
+      const heldOrder = orderHold.holdOrder(
+        heldOrderItems,
+        selectedCustomer ? {
+          name: selectedCustomer.name,
+          phone: selectedCustomer.phone,
+          email: selectedCustomer.email
+        } : undefined,
+        {
+          paymentMethod,
+          notes: holdOrderNotes,
+          createdBy: 'Admin', // In real app, get from auth
+          branch: `Branch ${selectedBranch}`
+        }
+      )
+
+      alert(`Order held successfully!\nOrder ID: ${heldOrder.id}\nExpires: ${new Date(heldOrder.expiresAt).toLocaleString()}`)
+
+      // Reset cart
+      setCart([])
+      setDiscount(0)
+      setPaymentMethod('CASH')
+      setSelectedCustomer(null)
+      setHoldOrderNotes('')
+      setShowHoldOrderDialog(false)
+    } catch (error) {
+      alert(`Error holding order: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
 
   const handleCheckout = async () => {
     if (cart.length === 0) return
@@ -204,18 +313,108 @@ export default function POSPage() {
     }
 
     try {
-      const response = await fetch('/api/sales', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(saleData),
-      })
+      let result: any
 
-      const result = await response.json()
+      // Try online API first, fallback to offline mode
+      if (offlineStatus.isOnline) {
+        try {
+          const response = await fetch('/api/sales', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(saleData),
+          })
+
+          result = await response.json()
+
+          if (!result.success) {
+            throw new Error(result.error || 'Failed to process sale online')
+          }
+        } catch (onlineError) {
+          console.log('Online checkout failed, switching to offline mode')
+          result = { success: true, offline: true, saleNumber: saleData.saleNumber }
+        }
+      } else {
+        // Offline mode
+        result = { success: true, offline: true, saleNumber: saleData.saleNumber }
+      }
 
       if (result.success) {
-        alert(`Sale completed successfully!\nSale Number: ${saleData.saleNumber}\nTotal: ${formatCurrency(total)}`)
+        // Update shift metrics
+        if (currentShift) {
+          shiftManager.updateShiftMetrics({
+            totalAmount: total,
+            paymentMethod,
+            itemCount: cart.reduce((sum, item) => sum + item.quantity, 0),
+            items: cart.map(item => ({
+              name: item.product.name,
+              quantity: item.quantity,
+              price: item.unitPrice
+            }))
+          })
+        }
+
+        // Update cash drawer
+        if (cashDrawerState.isOpen && paymentMethod === 'CASH') {
+          cashDrawer.recordSale(total, 'Admin', saleData.saleNumber)
+          setCashDrawerState(cashDrawer.getState())
+        }
+
+        // Save offline sale if needed
+        if (result.offline) {
+          offlineManager.saveOfflineSale({
+            saleNumber: saleData.saleNumber,
+            customerId: selectedCustomer?.id,
+            items: cart.map(item => ({
+              productId: item.product.id,
+              productName: item.product.name,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              totalPrice: item.totalPrice
+            })),
+            subtotal,
+            discountAmount,
+            taxAmount,
+            totalAmount: total,
+            paymentMethod,
+            paymentStatus: 'PAID',
+            branchId: selectedBranch,
+            branchName: `Branch ${selectedBranch}`,
+            cashierName: 'Admin',
+            notes: ''
+          })
+        }
+
+        // Print receipt
+        try {
+          receiptPrinter.printReceipt({
+            saleNumber: saleData.saleNumber,
+            customerName: selectedCustomer?.name,
+            customerPhone: selectedCustomer?.phone,
+            customerEmail: selectedCustomer?.email,
+            items: cart.map(item => ({
+              name: item.product.name,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              totalPrice: item.totalPrice
+            })),
+            subtotal,
+            discountAmount,
+            taxAmount,
+            totalAmount: total,
+            paymentMethod,
+            paymentStatus: 'PAID',
+            branch: `Branch ${selectedBranch}`,
+            cashierName: 'Admin',
+            createdAt: new Date().toISOString()
+          })
+        } catch (receiptError) {
+          console.error('Error printing receipt:', receiptError)
+        }
+
+        // Show success message
+        alert(`Sale completed successfully!\nSale Number: ${saleData.saleNumber}\nTotal: ${formatCurrency(total)}${result.offline ? ' (Saved offline)' : ''}`)
 
         // Reset cart
         setCart([])
@@ -226,7 +425,31 @@ export default function POSPage() {
         // Reload products to get updated inventory
         await loadProducts()
 
-        // Trigger inventory update event
+        // Trigger comprehensive real-time updates
+        const updateData = {
+          saleNumber: saleData.saleNumber,
+          items: cart.map(item => ({
+            productId: item.product.id,
+            productName: item.product.name,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            totalPrice: item.totalPrice
+          })),
+          subtotal,
+          discountAmount: discountAmount,
+          taxAmount: taxAmount,
+          totalAmount: total,
+          paymentMethod,
+          branchId: selectedBranch,
+          userId: 'admin@pos-store.com', // In real app, get from auth
+          createdAt: new Date().toISOString(),
+          offline: result.offline
+        }
+
+        // Use the update manager to trigger real-time updates across all pages
+        updateManager.triggerSaleUpdate(updateData)
+
+        // Also trigger the old inventory event for backward compatibility
         window.dispatchEvent(new CustomEvent('inventoryUpdate', {
           detail: {
             type: 'sale_completed',
@@ -280,6 +503,28 @@ export default function POSPage() {
             <p className="text-sm text-secondary">Select products and complete sales transactions</p>
           </div>
           <div className="flex items-center space-x-4">
+            {/* Connection Status */}
+            <div className="flex items-center space-x-2 text-sm">
+              <div className={`w-2 h-2 rounded-full ${offlineStatus.isOnline ? 'bg-green-500' : 'bg-red-500'}`} />
+              <span className="text-secondary">{offlineStatus.isOnline ? 'Online' : 'Offline'}</span>
+            </div>
+
+            {/* Shift Status */}
+            <div className="flex items-center space-x-2 text-sm">
+              <Clock className="h-4 w-4 text-secondary" />
+              <span className="text-secondary">
+                {currentShift ? `Shift Active (${currentShift.totalTransactions} sales)` : 'No Shift'}
+              </span>
+            </div>
+
+            {/* Cash Drawer Status */}
+            <div className="flex items-center space-x-2 text-sm">
+              <DollarSign className="h-4 w-4 text-secondary" />
+              <span className="text-secondary">
+                {cashDrawerState.isOpen ? `Drawer: ${formatCurrency(cashDrawerState.currentBalance)}` : 'Drawer Closed'}
+              </span>
+            </div>
+
             <div className="text-sm">
               <span className="text-secondary">Cashier: </span>
               <span className="font-medium text-primary">Admin</span>
@@ -385,33 +630,49 @@ export default function POSPage() {
         </div>
 
         {/* Right Side - Order Details (30%) */}
-        <div className="w-full lg:w-3/12 bg-surface flex flex-col">
+        <div className="w-full lg:w-3/12 bg-gradient-to-b from-indigo-50 to-purple-50 border-l border-purple-200 flex flex-col">
           {/* Customer Info */}
-          <div className="p-4 border-b border-border bg-card">
+          <div className="p-4 border-b border-purple-200 bg-white/90 backdrop-blur-sm">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-primary">Customer</h3>
               <button
                 className="text-xs text-primary hover:text-primary/80 transition-colors"
-                onClick={() => {
-                  const customerName = prompt('Enter customer name:')
-                  if (customerName) {
-                    setSelectedCustomer({
-                      id: '1',
-                      name: customerName,
-                      customerType: 'WALK_IN'
-                    })
-                  }
-                }}
+                onClick={() => setShowCustomerSearch(true)}
               >
-                {selectedCustomer ? 'Change' : 'Add'}
+                {selectedCustomer ? 'Change' : 'Select'}
               </button>
             </div>
-            <div className="flex items-center text-sm">
-              <User className="h-4 w-4 mr-2 text-muted" />
-              <span className="text-primary">
-                {selectedCustomer ? selectedCustomer.name : 'Walk-in Customer'}
-              </span>
-            </div>
+            {selectedCustomer ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center text-sm">
+                    <User className="h-4 w-4 mr-2 text-muted" />
+                    <span className="text-primary font-medium">{selectedCustomer.name}</span>
+                  </div>
+                  <button
+                    className="text-xs text-red-600 hover:text-red-700"
+                    onClick={() => setSelectedCustomer(null)}
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div className="flex items-center justify-between text-xs text-secondary">
+                  <span>{selectedCustomer.customerType.replace('_', ' ')}</span>
+                  <span>{selectedCustomer.totalSales} sales</span>
+                </div>
+                {selectedCustomer.email && (
+                  <div className="text-xs text-secondary truncate">{selectedCustomer.email}</div>
+                )}
+                {selectedCustomer.phone && (
+                  <div className="text-xs text-secondary">{selectedCustomer.phone}</div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center text-sm text-secondary">
+                <User className="h-4 w-4 mr-2 text-muted" />
+                <span>Walk-in Customer</span>
+              </div>
+            )}
           </div>
 
           {/* Cart Items */}
@@ -485,7 +746,7 @@ export default function POSPage() {
           </div>
 
           {/* Order Summary */}
-          <div className="bg-card border-t border-border p-4 space-y-3">
+          <div className="bg-white/90 backdrop-blur-sm border-t border-purple-200 p-4 space-y-3 mt-auto">
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-secondary">Subtotal:</span>
@@ -512,10 +773,11 @@ export default function POSPage() {
                 </div>
               )}
 
-              <div className="flex justify-between text-sm">
+              {/* Tax deactivated */}
+              {/* <div className="flex justify-between text-sm">
                 <span className="text-secondary">Tax (16%):</span>
                 <span className="text-primary">{formatCurrency(taxAmount)}</span>
-              </div>
+              </div> */}
 
               <div className="border-t border-border pt-2">
                 <div className="flex justify-between font-bold">
@@ -527,51 +789,187 @@ export default function POSPage() {
 
             {/* Payment Method */}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-primary">Payment Method</label>
+              <label className="text-sm font-medium text-indigo-700">Payment Method</label>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { id: 'CASH', icon: DollarSign, label: 'Cash' },
-                  { id: 'CARD', icon: CreditCard, label: 'Card' },
-                  { id: 'MOBILE_MONEY', icon: Smartphone, label: 'Mobile' },
-                  { id: 'BANK_TRANSFER', icon: Building2, label: 'Bank' }
+                  { id: 'CASH', icon: DollarSign, label: 'Cash', color: 'green' },
+                  { id: 'MOBILE_MONEY', icon: Smartphone, label: 'Mobile Money', color: 'blue' }
                 ].map((method) => (
                   <button
                     key={method.id}
                     onClick={() => setPaymentMethod(method.id)}
-                    className={`flex flex-col items-center p-2 rounded border transition-all text-xs ${
+                    className={`flex flex-col items-center p-3 rounded-xl border-2 transition-all text-sm font-medium ${
                       paymentMethod === method.id
-                        ? 'bg-primary text-primary-foreground border-primary'
-                        : 'bg-surface border-border text-secondary hover:bg-card hover:border-primary'
+                        ? method.color === 'green'
+                          ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white border-green-500 shadow-lg transform scale-105'
+                          : 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white border-blue-500 shadow-lg transform scale-105'
+                        : 'bg-white/70 backdrop-blur-sm border-gray-200 text-gray-700 hover:border-indigo-300 hover:bg-indigo-50 hover:shadow-md'
                     }`}
                   >
-                    <method.icon className="h-4 w-4 mb-1" />
+                    <method.icon className="h-5 w-5 mb-1" />
                     <span className="font-medium">{method.label}</span>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Checkout Button */}
-            <button
-              onClick={handleCheckout}
-              disabled={cart.length === 0}
-              className={`w-full py-3 text-sm font-semibold rounded-lg transition-all flex items-center justify-center ${
-                cart.length === 0
-                  ? 'bg-muted text-muted-foreground cursor-not-allowed'
-                  : 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-md'
-              }`}
-            >
-              <Receipt className="h-4 w-4 mr-2" />
-              Complete Sale
-              {cart.length > 0 && (
-                <span className="ml-auto font-bold">
-                  {formatCurrency(total)}
-                </span>
-              )}
-            </button>
+            {/* Action Buttons */}
+            <div className="space-y-2">
+              {/* Hold Order Button */}
+              <button
+                onClick={handleHoldOrder}
+                disabled={cart.length === 0}
+                className={`w-full py-3 px-6 text-sm font-bold rounded-xl transition-all duration-300 flex items-center justify-center ${
+                  cart.length === 0
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed border-2 border-gray-300'
+                    : 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 shadow-lg hover:shadow-xl transform hover:scale-105 border-2 border-transparent'
+                }`}
+              >
+                <Pause className="h-4 w-4 mr-2" />
+                Hold Order
+              </button>
+
+              {/* Checkout Button */}
+              <button
+                onClick={handleCheckout}
+                disabled={cart.length === 0}
+                className={`w-full py-4 px-6 text-sm font-bold rounded-2xl transition-all duration-300 flex items-center justify-center relative overflow-hidden group ${
+                  cart.length === 0
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed border-2 border-gray-300'
+                    : 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white hover:from-purple-700 hover:via-indigo-700 hover:to-blue-700 shadow-xl hover:shadow-2xl transform hover:scale-105 border-2 border-transparent'
+                }`}
+              >
+                {/* Animated background effect */}
+                <div className={`absolute inset-0 bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${
+                  cart.length === 0 ? 'hidden' : ''
+                }`}></div>
+
+                {/* Button content */}
+                <div className="relative flex items-center justify-center w-full">
+                  <div className="flex items-center space-x-3">
+                    <div className={`p-2 rounded-full ${
+                      cart.length === 0 ? 'bg-gray-300' : 'bg-white/20 backdrop-blur-sm'
+                    }`}>
+                      <CheckCircle className={`h-5 w-5 ${
+                        cart.length === 0 ? 'text-gray-400' : 'text-white'
+                      }`} />
+                    </div>
+
+                    <div className="text-left">
+                      <div className={`text-sm font-bold ${
+                        cart.length === 0 ? 'text-gray-400' : 'text-white'
+                      }`}>
+                        {cart.length === 0 ? 'Add Items to Cart' : 'Complete Sale'}
+                      </div>
+                      {cart.length > 0 && (
+                        <div className="text-xs text-white/80">
+                          {cart.length} {cart.length === 1 ? 'item' : 'items'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {cart.length > 0 && (
+                    <div className="ml-auto">
+                      <div className="text-lg font-bold text-white">
+                        {formatCurrency(total)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Subtle pulse animation for active state */}
+                {cart.length > 0 && (
+                  <div className="absolute inset-0 rounded-2xl animate-pulse bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 opacity-20"></div>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Customer Search Modal */}
+      <POSCustomerSearch
+        isOpen={showCustomerSearch}
+        onClose={() => setShowCustomerSearch(false)}
+        onSelectCustomer={setSelectedCustomer}
+        selectedCustomer={selectedCustomer}
+      />
+
+      {/* POS Control Panel */}
+      <POSControlPanel
+        currentBranchId={selectedBranch}
+        cashierName="Admin"
+        onShiftChange={setCurrentShift}
+        onCashDrawerChange={setCashDrawerState}
+      />
+
+      {/* Offline Status Indicator */}
+      <OfflineStatus />
+
+      {/* Hold Order Dialog */}
+      {showHoldOrderDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-96 max-w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Hold Order</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Order Details
+                </label>
+                <div className="bg-gray-50 p-3 rounded text-sm">
+                  <div className="flex justify-between mb-1">
+                    <span>Items:</span>
+                    <span className="font-medium">{cart.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Total:</span>
+                    <span className="font-medium">{formatCurrency(total)}</span>
+                  </div>
+                  {selectedCustomer && (
+                    <div className="mt-2 pt-2 border-t">
+                      <div>Customer: {selectedCustomer.name}</div>
+                      {selectedCustomer.phone && <div>Phone: {selectedCustomer.phone}</div>}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Notes (optional)
+                </label>
+                <textarea
+                  value={holdOrderNotes}
+                  onChange={(e) => setHoldOrderNotes(e.target.value)}
+                  placeholder="Add any special notes..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  rows={3}
+                />
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => {
+                    setShowHoldOrderDialog(false)
+                    setHoldOrderNotes('')
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmHoldOrder}
+                  className="flex-1 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+                >
+                  Hold Order
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
