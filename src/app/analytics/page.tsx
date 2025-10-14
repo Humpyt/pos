@@ -15,13 +15,33 @@ import {
   Filter,
   Store,
   Target,
-  Zap
+  Zap,
+  AlertTriangle
 } from 'lucide-react'
 import { PageHeader, StatCard, LoadingState, StatusBadge } from '@/components/shared/DesignSystem'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { updateManager } from '@/lib/update-manager'
+
+// Recharts imports for interactive charts
+import {
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart as RePieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer
+} from 'recharts'
 
 interface SalesData {
   date: string
@@ -59,23 +79,77 @@ interface CategoryPerformance {
   growth: number
 }
 
+// API Response Types
+interface AnalyticsResponse {
+  summaryStats: {
+    totalRevenue: number
+    totalSales: number
+    totalProfit: number
+    totalCustomers: number
+    averageOrderValue: number
+    profitMargin: number
+    customerGrowth: number
+    revenueGrowth: number
+  }
+  salesData: SalesData[]
+  topProducts: TopProduct[]
+  categoryPerformance: CategoryPerformance[]
+  branchPerformance: BranchPerformance[]
+  period: {
+    start: string
+    end: string
+    timeRange: string
+  }
+}
+
 export default function AnalyticsPage() {
   const [timeRange, setTimeRange] = useState('week')
+  const [selectedBranch, setSelectedBranch] = useState('all')
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [analyticsData, setAnalyticsData] = useState<AnalyticsResponse | null>(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
 
-  const refreshAnalytics = () => {
+  const refreshAnalytics = async () => {
     setRefreshTrigger(prev => prev + 1)
-    setIsLoading(true)
-    setTimeout(() => setIsLoading(false), 500) // Simulate data refresh
+    await fetchAnalyticsData()
+  }
+
+  const fetchAnalyticsData = async () => {
+    try {
+      setIsLoading(true)
+      setError(null)
+
+      const params = new URLSearchParams()
+      params.append('timeRange', timeRange)
+      if (selectedBranch !== 'all') {
+        params.append('branchId', selectedBranch)
+      }
+
+      const response = await fetch(`/api/analytics?${params.toString()}`)
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch analytics data')
+      }
+
+      const result = await response.json()
+
+      if (result.success) {
+        setAnalyticsData(result.data)
+      } else {
+        throw new Error(result.error || 'Failed to fetch analytics data')
+      }
+    } catch (error) {
+      console.error('Error fetching analytics data:', error)
+      setError(error instanceof Error ? error.message : 'Failed to fetch analytics data')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   useEffect(() => {
-    // Simulate fetching analytics data
-    setTimeout(() => {
-      setIsLoading(false)
-    }, 1000)
-  }, [timeRange, refreshTrigger])
+    fetchAnalyticsData()
+  }, [timeRange, selectedBranch, refreshTrigger])
 
   // Listen for real-time analytics updates
   useEffect(() => {
@@ -94,114 +168,27 @@ export default function AnalyticsPage() {
       unsubscribe()
       unsubscribeSales()
     }
-  }, [])
+  }, [timeRange, selectedBranch])
 
-  // Mock data for demonstration
-  const salesData: SalesData[] = [
-    { date: '2024-09-30', sales: 45, revenue: 12450, profit: 3735, customers: 38 },
-    { date: '2024-10-01', sales: 52, revenue: 15680, profit: 4704, customers: 42 },
-    { date: '2024-10-02', sales: 48, revenue: 14240, profit: 4272, customers: 39 },
-    { date: '2024-10-03', sales: 61, revenue: 18920, profit: 5676, customers: 48 },
-    { date: '2024-10-04', sales: 55, revenue: 16890, profit: 5067, customers: 44 },
-    { date: '2024-10-05', sales: 67, revenue: 20150, profit: 6045, customers: 52 },
-  ]
-
-  const topProducts: TopProduct[] = [
-    {
-      id: '1',
-      name: 'Coca-Cola 1L',
-      category: 'Beverages',
-      quantitySold: 245,
-      revenue: 36750,
-      profit: 7350,
-      growth: 12.5
-    },
-    {
-      id: '2',
-      name: 'Aquafina Water 1L',
-      category: 'Water',
-      quantitySold: 189,
-      revenue: 15120,
-      profit: 2835,
-      growth: 8.3
-    },
-    {
-      id: '3',
-      name: 'Fanta Orange 1L',
-      category: 'Beverages',
-      quantitySold: 167,
-      revenue: 23380,
-      profit: 5014,
-      growth: -2.1
-    },
-    {
-      id: '4',
-      name: 'Mountain Dew Extreme 500ml',
-      category: 'Energy Drinks',
-      quantitySold: 134,
-      revenue: 16080,
-      profit: 3354,
-      growth: 24.7
-    },
-    {
-      id: '5',
-      name: 'Fresh Apple Juice 1L',
-      category: 'Juices',
-      quantitySold: 98,
-      revenue: 15680,
-      profit: 3920,
-      growth: 15.2
-    }
-  ]
-
-  const branchPerformance: BranchPerformance[] = [
-    {
-      id: '1',
-      name: 'Main Store - Nairobi',
-      sales: 328,
-      revenue: 98410,
-      profit: 29523,
-      customers: 263,
-      growth: 18.7
-    },
-    {
-      id: '2',
-      name: 'Branch 2 - Mombasa',
-      sales: 156,
-      revenue: 46820,
-      profit: 14046,
-      customers: 125,
-      growth: 12.3
-    },
-    {
-      id: '3',
-      name: 'Branch 3 - Kisumu',
-      sales: 98,
-      revenue: 29440,
-      profit: 8832,
-      customers: 78,
-      growth: -5.2
-    }
-  ]
-
-  const categoryPerformance: CategoryPerformance[] = [
-    { category: 'Beverages', sales: 412, revenue: 60130, profit: 12364, growth: 8.7 },
-    { category: 'Water', sales: 189, revenue: 15120, profit: 2835, growth: 12.1 },
-    { category: 'Energy Drinks', sales: 134, revenue: 16080, profit: 3354, growth: 24.7 },
-    { category: 'Juices', sales: 98, revenue: 15680, profit: 3920, growth: 15.2 },
-    { category: 'Dairy', sales: 67, revenue: 8920, profit: 2230, growth: 6.3 }
-  ]
-
-  const summaryStats = {
-    totalRevenue: salesData.reduce((sum, day) => sum + day.revenue, 0),
-    totalSales: salesData.reduce((sum, day) => sum + day.sales, 0),
-    totalProfit: salesData.reduce((sum, day) => sum + day.profit, 0),
-    totalCustomers: salesData.reduce((sum, day) => sum + day.customers, 0),
-    averageOrderValue: salesData.reduce((sum, day) => sum + day.revenue, 0) / salesData.reduce((sum, day) => sum + day.sales, 0),
-    profitMargin: (salesData.reduce((sum, day) => sum + day.profit, 0) / salesData.reduce((sum, day) => sum + day.revenue, 0)) * 100,
-    customerGrowth: 15.3,
-    revenueGrowth: 22.1
+  // Use real data or fallback to empty state
+  const summaryStats = analyticsData?.summaryStats || {
+    totalRevenue: 0,
+    totalSales: 0,
+    totalProfit: 0,
+    totalCustomers: 0,
+    averageOrderValue: 0,
+    profitMargin: 0,
+    customerGrowth: 0,
+    revenueGrowth: 0
   }
+
+  const salesData = analyticsData?.salesData || []
+  const topProducts = analyticsData?.topProducts || []
+  const categoryPerformance = analyticsData?.categoryPerformance || []
+  const branchPerformance = analyticsData?.branchPerformance || []
+
+  // Chart colors
+  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
 
   const getGrowthIndicator = (growth: number) => {
     if (growth > 0) {
@@ -225,6 +212,21 @@ export default function AnalyticsPage() {
     return <LoadingState />
   }
 
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-red-900 mb-2">Error Loading Analytics</h3>
+          <p className="text-red-600 mb-4">{error}</p>
+          <Button onClick={fetchAnalyticsData} variant="outline">
+            Try Again
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-8">
       {/* Page Header */}
@@ -233,6 +235,19 @@ export default function AnalyticsPage() {
         subtitle="Comprehensive insights into your business performance"
       >
         <div className="flex space-x-3">
+          {/* Branch Selector */}
+          <select
+            value={selectedBranch}
+            onChange={(e) => setSelectedBranch(e.target.value)}
+            className="px-3 py-2 bg-card border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="all">All Branches</option>
+            <option value="cmgq8tx590000lras30r8autd">Main Store - Nairobi</option>
+            <option value="cmgq8u3j90001lras30r8b5qg">Branch 2 - Mombasa</option>
+            <option value="cmgq8v9h00002lras30r8h8xw">Branch 3 - Kisumu</option>
+          </select>
+
+          {/* Time Range Selector */}
           <div className="flex items-center space-x-2 bg-card border border-border rounded-md p-1">
             {['day', 'week', 'month', 'quarter', 'year'].map((range) => (
               <Button
@@ -246,7 +261,8 @@ export default function AnalyticsPage() {
               </Button>
             ))}
           </div>
-          <Button variant="outline">
+
+          <Button variant="outline" onClick={refreshAnalytics} disabled={isLoading}>
             <Download className="h-4 w-4 mr-2" />
             Export Report
           </Button>
@@ -314,28 +330,63 @@ export default function AnalyticsPage() {
             Sales Trend
           </h2>
           <p className="text-secondary mb-6">Daily sales performance over the selected period</p>
-          <div className="h-64 bg-surface rounded-lg flex items-center justify-center">
-            <div className="text-center">
-              <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-secondary mb-4">Sales trend chart will be displayed here</p>
-              <div className="grid grid-cols-3 gap-4 text-sm">
+          <div className="h-64">
+            {salesData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={salesData}>
+                  <defs>
+                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1}/>
+                    </linearGradient>
+                    <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0.1}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  />
+                  <YAxis yAxisId="left" tick={{ fontSize: 12 }} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
+                  <Tooltip
+                    formatter={(value: number, name: string) => [
+                      name === 'revenue' ? formatCurrency(value) : value,
+                      name === 'revenue' ? 'Revenue' : 'Sales'
+                    ]}
+                    labelFormatter={(value) => new Date(value).toLocaleDateString()}
+                  />
+                  <Area
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey="revenue"
+                    stroke="#3b82f6"
+                    fillOpacity={1}
+                    fill="url(#colorRevenue)"
+                    strokeWidth={2}
+                  />
+                  <Area
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="sales"
+                    stroke="#10b981"
+                    fillOpacity={1}
+                    fill="url(#colorSales)"
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center h-full flex items-center justify-center">
                 <div>
-                  <p className="text-secondary">Peak Day</p>
-                  <p className="font-medium text-primary">Oct 5, 2024</p>
-                  <p className="text-emerald-600">67 sales</p>
-                </div>
-                <div>
-                  <p className="text-secondary">Avg Daily</p>
-                  <p className="font-medium text-primary">54.7 sales</p>
-                  <p className="text-blue-600">+15.3%</p>
-                </div>
-                <div>
-                  <p className="text-secondary">Total Revenue</p>
-                  <p className="font-medium text-primary">{formatCurrency(summaryStats.totalRevenue)}</p>
-                  <p className="text-emerald-600">+22.1%</p>
+                  <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-secondary">No sales data available for the selected period</p>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -346,29 +397,35 @@ export default function AnalyticsPage() {
             Revenue by Category
           </h2>
           <p className="text-secondary mb-6">Distribution of revenue across product categories</p>
-          <div className="h-64 bg-surface rounded-lg flex items-center justify-center">
-            <div className="text-center">
-              <PieChart className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-secondary mb-4">Revenue breakdown chart will be displayed here</p>
-              <div className="space-y-2 text-sm text-left">
-                {categoryPerformance.slice(0, 4).map((category, index) => (
-                  <div key={category.category} className="flex justify-between items-center p-2 bg-card rounded">
-                    <div className="flex items-center">
-                      <div className={`w-3 h-3 rounded-full mr-2 ${
-                        index === 0 ? 'bg-blue-500' :
-                        index === 1 ? 'bg-green-500' :
-                        index === 2 ? 'bg-yellow-500' : 'bg-purple-500'
-                      }`}></div>
-                      <span className="font-medium text-primary">{category.category}</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="font-medium text-primary">{formatCurrency(category.revenue)}</span>
-                      <span className="text-xs text-secondary ml-2">({((category.revenue / summaryStats.totalRevenue) * 100).toFixed(1)}%)</span>
-                    </div>
-                  </div>
-                ))}
+          <div className="h-64">
+            {categoryPerformance.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <RePieChart>
+                  <Pie
+                    data={categoryPerformance}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ category, percent }) => `${category} ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="revenue"
+                  >
+                    {categoryPerformance.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value: number) => [formatCurrency(value), 'Revenue']} />
+                </RePieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center h-full flex items-center justify-center">
+                <div>
+                  <PieChart className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-secondary">No category data available</p>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
