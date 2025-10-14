@@ -348,35 +348,73 @@ export class ProductService {
 
   static async updateStock(productId: string, branchId: string, quantityChange: number) {
     try {
-      // Find or create inventory record
-      const inventory = await prisma.inventory.upsert({
+      // First, try to find an existing inventory record
+      const existingInventory = await prisma.inventory.findFirst({
         where: {
-          productId_branchId_variationId_batchId: {
-            productId,
-            branchId,
-            variationId: null,
-            batchId: null
-          }
-        },
-        update: {
-          quantity: {
-            increment: quantityChange
-          },
-          lastUpdated: new Date()
-        },
-        create: {
           productId,
-          branchId,
-          variationId: null,
-          batchId: null,
-          quantity: Math.max(0, quantityChange),
-          minStock: 10,
-          reorderPoint: 5,
-          lastUpdated: new Date()
+          branchId
         }
       })
 
-      return inventory
+      if (existingInventory) {
+        // Update existing record
+        return await prisma.inventory.update({
+          where: {
+            id: existingInventory.id
+          },
+          data: {
+            quantity: {
+              increment: quantityChange
+            },
+            lastUpdated: new Date()
+          }
+        })
+      } else {
+        // Create new record (we need to create a batch first or find one)
+        const product = await prisma.product.findUnique({
+          where: { id: productId },
+          include: { variations: { take: 1 } }
+        })
+
+        if (!product) {
+          throw new Error('Product not found')
+        }
+
+        // Create a default batch if needed
+        let batch = await prisma.productBatch.findFirst({
+          where: {
+            productId,
+            batchNumber: 'DEFAULT'
+          }
+        })
+
+        if (!batch) {
+          batch = await prisma.productBatch.create({
+            data: {
+              productId,
+              variationId: product.variations[0]?.id,
+              batchNumber: 'DEFAULT',
+              quantity: 999999,
+              costPrice: product.variations[0]?.costPrice || 0,
+              supplier: 'Default Supplier'
+            }
+          })
+        }
+
+        // Create inventory record
+        return await prisma.inventory.create({
+          data: {
+            productId,
+            branchId,
+            variationId: product.variations[0]?.id,
+            batchId: batch.id,
+            quantity: Math.max(0, quantityChange),
+            minStock: 10,
+            reorderPoint: 5,
+            lastUpdated: new Date()
+          }
+        })
+      }
     } catch (error) {
       console.error('Error updating stock:', error)
       throw error

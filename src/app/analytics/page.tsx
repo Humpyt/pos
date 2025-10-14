@@ -21,6 +21,7 @@ import { PageHeader, StatCard, LoadingState, StatusBadge } from '@/components/sh
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { updateManager } from '@/lib/update-manager'
 
 interface SalesData {
   date: string
@@ -61,13 +62,39 @@ interface CategoryPerformance {
 export default function AnalyticsPage() {
   const [timeRange, setTimeRange] = useState('week')
   const [isLoading, setIsLoading] = useState(true)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
+
+  const refreshAnalytics = () => {
+    setRefreshTrigger(prev => prev + 1)
+    setIsLoading(true)
+    setTimeout(() => setIsLoading(false), 500) // Simulate data refresh
+  }
 
   useEffect(() => {
     // Simulate fetching analytics data
     setTimeout(() => {
       setIsLoading(false)
     }, 1000)
-  }, [timeRange])
+  }, [timeRange, refreshTrigger])
+
+  // Listen for real-time analytics updates
+  useEffect(() => {
+    const unsubscribe = updateManager.subscribe('analytics_updated', (event) => {
+      console.log('Analytics page: Update received', event.data)
+      refreshAnalytics()
+    })
+
+    // Also listen for sales completion events
+    const unsubscribeSales = updateManager.subscribe('sale_completed', (event) => {
+      console.log('Analytics page: Sale completed, refreshing data', event.data)
+      refreshAnalytics()
+    })
+
+    return () => {
+      unsubscribe()
+      unsubscribeSales()
+    }
+  }, [])
 
   // Mock data for demonstration
   const salesData: SalesData[] = [

@@ -19,16 +19,22 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { SignedIn, SignedOut, SignInButton } from "@clerk/nextjs"
+import { UserButtonComponent } from "@/components/auth/UserButton"
+import { SignInButtonComponent } from "@/components/auth/SignInButton"
+import { useAuth } from "@/lib/use-auth"
+import { AuthGuard } from "@/components/auth/AuthGuard"
+import NotificationSystem from "@/components/notifications/NotificationSystem"
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: BarChart3 },
   { name: 'Point of Sale', href: '/pos', icon: ShoppingCart },
-  { name: 'Products', href: '/products', icon: Package },
   { name: 'Inventory', href: '/inventory', icon: Store },
   { name: 'Customers', href: '/customers', icon: Users },
   { name: 'Sales', href: '/sales', icon: FileText },
   { name: 'Analytics', href: '/analytics', icon: TrendingUp },
   { name: 'Accounting', href: '/accounting', icon: Calculator },
+  { name: 'Reports', href: '/reports', icon: FileText },
   { name: 'Settings', href: '/settings', icon: Settings },
 ]
 
@@ -40,19 +46,21 @@ export default function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const pathname = usePathname()
+  const { userName, userEmail } = useAuth()
 
   // Debug: Log current pathname
   console.log('Current pathname:', pathname)
 
   return (
-    <div className="min-h-screen bg-surface lg:flex">
-      {/* Mobile sidebar backdrop */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 lg:hidden bg-gray-600 bg-opacity-75"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+    <AuthGuard>
+      <div className="min-h-screen bg-surface lg:flex">
+        {/* Mobile sidebar backdrop */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-40 lg:hidden bg-gray-600 bg-opacity-75"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
 
       {/* Sidebar */}
       <div className={cn(
@@ -95,8 +103,8 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         </div>
 
-        <nav className="mt-8">
-          <div className="px-2 space-y-2">
+        <nav className="mt-8 flex-1 flex flex-col justify-between overflow-hidden">
+          <div className="px-2 space-y-2 overflow-y-auto overflow-x-hidden flex-1">
             {navigation.map((item) => {
               const isActive = pathname === item.href
               return (
@@ -148,15 +156,28 @@ export default function Layout({ children }: LayoutProps) {
                 <span>Branch:</span>
                 <span className="font-medium text-primary">Main Store</span>
               </div>
-              <div className="flex items-center space-x-2 text-sm text-secondary">
-                <Users className="h-4 w-4" />
-                <span>User:</span>
-                <span className="font-medium text-primary">Admin</span>
-              </div>
+
+              <SignedIn>
+                <div className="flex items-center space-x-2 text-sm text-secondary">
+                  <Users className="h-4 w-4" />
+                  <span>User:</span>
+                  <span className="font-medium text-primary">{userName || 'Loading...'}</span>
+                </div>
+              </SignedIn>
+
               <div className="flex items-center space-x-2 text-sm text-muted">
                 <span className="px-2 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-medium">
                   🇺🇬 Uganda
                 </span>
+              </div>
+
+              <div className="flex items-center space-x-3">
+                <SignedOut>
+                  <SignInButtonComponent />
+                </SignedOut>
+                <SignedIn>
+                  <UserButtonComponent />
+                </SignedIn>
               </div>
             </div>
           </div>
@@ -167,6 +188,10 @@ export default function Layout({ children }: LayoutProps) {
           {children}
         </main>
       </div>
+
+      {/* Notification System */}
+      <NotificationSystem />
     </div>
+    </AuthGuard>
   )
 }

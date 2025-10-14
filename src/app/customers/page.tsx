@@ -17,130 +17,187 @@ import {
   Star,
   TrendingUp,
   Award,
-  Clock
+  Clock,
+  RefreshCw
 } from 'lucide-react'
 import { PageHeader, StatCard, DataTable, StatusBadge, EmptyState, LoadingState, ActionCard } from '@/components/shared/DesignSystem'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatDate } from '@/lib/utils'
-
-interface Customer {
-  id: string
-  name: string
-  email?: string
-  phone?: string
-  address?: string
-  customerType: 'WALK_IN' | 'REGULAR' | 'WHOLESALE' | 'CORPORATE'
-  isActive: boolean
-  totalSales: number
-  totalSpent: number
-  averageOrderValue: number
-  lastPurchaseDate?: string
-  createdAt: string
-  branch: string
-}
+import { notifications } from '@/lib/notifications-simple'
+import CustomerModals, { Customer } from '@/components/customers/CustomerModals'
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedType, setSelectedType] = useState('all')
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Modal states
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
+  const [modalLoading, setModalLoading] = useState(false)
+
+  // Load customers from API
+  const loadCustomers = async () => {
+    try {
+      setIsLoading(true)
+      setError(null)
+
+      const params = new URLSearchParams()
+      if (searchTerm) {
+        params.append('search', searchTerm)
+      }
+      if (selectedType !== 'all') {
+        params.append('type', selectedType)
+      }
+
+      const response = await fetch(`/api/customers?${params.toString()}`)
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch customers')
+      }
+
+      const result = await response.json()
+      if (result.success) {
+        setCustomers(result.data)
+      } else {
+        throw new Error(result.error || 'Failed to load customers')
+      }
+    } catch (error) {
+      console.error('Error loading customers:', error)
+      setError('Failed to load customers. Please try again.')
+      setCustomers([])
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   useEffect(() => {
-    // Simulate fetching customers
-    setTimeout(() => {
-      setCustomers([
-        {
-          id: '1',
-          name: 'John Mukasa',
-          email: 'john.mukasa@email.com',
-          phone: '+2567012345678',
-          address: '123 Kampala Road, Kampala',
-          customerType: 'REGULAR',
-          isActive: true,
-          totalSales: 45,
-          totalSpent: 1542050, // ~15.4M UGX
-          averageOrderValue: 34268,
-          lastPurchaseDate: '2024-10-04',
-          createdAt: '2024-01-15',
-          branch: 'Main Store'
-        },
-        {
-          id: '2',
-          name: 'Mary Nakato',
-          email: 'mary.nakato@email.com',
-          phone: '+2567022345679',
-          address: '456 Jinja Road, Kampala',
-          customerType: 'WHOLESALE',
-          isActive: true,
-          totalSales: 128,
-          totalSpent: 8964075, // ~89.6M UGX
-          averageOrderValue: 70032,
-          lastPurchaseDate: '2024-10-05',
-          createdAt: '2024-02-20',
-          branch: 'Main Store'
-        },
-        {
-          id: '3',
-          name: 'David Okello',
-          email: 'david.okello@email.com',
-          phone: '+2567033345680',
-          address: '789 Entebbe Road, Entebbe',
-          customerType: 'REGULAR',
-          isActive: true,
-          totalSales: 23,
-          totalSpent: 892025, // ~8.9M UGX
-          averageOrderValue: 38784,
-          lastPurchaseDate: '2024-10-01',
-          createdAt: '2024-03-10',
-          branch: 'Main Store'
-        },
-        {
-          id: '4',
-          name: 'ABC Supermarket Ltd',
-          email: 'orders@abcsupermarket.co.ug',
-          phone: '+2567044345681',
-          address: 'Industrial Area, Kampala',
-          customerType: 'CORPORATE',
-          isActive: true,
-          totalSales: 256,
-          totalSpent: 24568000, // ~245.7M UGX
-          averageOrderValue: 95969,
-          lastPurchaseDate: '2024-10-03',
-          createdAt: '2024-01-05',
-          branch: 'Main Store'
-        },
-        {
-          id: '5',
-          name: 'Grace Namutebi',
-          email: 'grace.namutebi@email.com',
-          phone: '+2567055345682',
-          address: '321 Masaka Road, Mbarara',
-          customerType: 'REGULAR',
-          isActive: false,
-          totalSales: 12,
-          totalSpent: 324000, // ~3.2M UGX
-          averageOrderValue: 27000,
-          lastPurchaseDate: '2024-08-15',
-          createdAt: '2024-04-18',
-          branch: 'Branch 2 - Mbarara'
-        }
-      ])
-      setIsLoading(false)
-    }, 800)
-  }, [])
+    loadCustomers()
+  }, [searchTerm, selectedType])
 
-  const filteredCustomers = customers.filter(customer => {
-    const matchesSearch =
-      customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customer.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customer.phone?.includes(searchTerm)
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchTerm !== undefined) {
+        loadCustomers()
+      }
+    }, 300)
 
-    const matchesType = selectedType === 'all' || customer.customerType === selectedType
+    return () => clearTimeout(timer)
+  }, [searchTerm])
 
-    return matchesSearch && matchesType
-  })
+  // CRUD operations
+  const handleAddCustomer = async (data: any) => {
+    try {
+      const response = await fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+
+      const result = await response.json()
+      if (result.success) {
+        notifications.success('Success', 'Customer created successfully')
+        await loadCustomers()
+      } else {
+        throw new Error(result.error || 'Failed to create customer')
+      }
+    } catch (error) {
+      console.error('Error adding customer:', error)
+      notifications.error('Error', error instanceof Error ? error.message : 'Failed to create customer')
+      throw error
+    }
+  }
+
+  const handleEditCustomer = async (id: string, data: any) => {
+    try {
+      const response = await fetch(`/api/customers/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+
+      const result = await response.json()
+      if (result.success) {
+        notifications.success('Success', 'Customer updated successfully')
+        await loadCustomers()
+      } else {
+        throw new Error(result.error || 'Failed to update customer')
+      }
+    } catch (error) {
+      console.error('Error updating customer:', error)
+      notifications.error('Error', error instanceof Error ? error.message : 'Failed to update customer')
+      throw error
+    }
+  }
+
+  const handleDeleteCustomer = async (id: string) => {
+    try {
+      const response = await fetch(`/api/customers/${id}`, {
+        method: 'DELETE'
+      })
+
+      const result = await response.json()
+      if (result.success) {
+        notifications.success('Success', 'Customer deleted successfully')
+        await loadCustomers()
+      } else {
+        throw new Error(result.error || 'Failed to delete customer')
+      }
+    } catch (error) {
+      console.error('Error deleting customer:', error)
+      notifications.error('Error', error instanceof Error ? error.message : 'Failed to delete customer')
+      throw error
+    }
+  }
+
+  // Modal handlers
+  const openEditModal = (customer: Customer) => {
+    setSelectedCustomer(customer)
+    setShowEditModal(true)
+  }
+
+  const openDeleteModal = (customer: Customer) => {
+    setSelectedCustomer(customer)
+    setShowDeleteModal(true)
+  }
+
+  const closeModals = () => {
+    setShowAddModal(false)
+    setShowEditModal(false)
+    setShowDeleteModal(false)
+    setSelectedCustomer(null)
+  }
+
+  // Export functionality
+  const handleExport = async () => {
+    try {
+      const response = await fetch('/api/customers/export')
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `customers-export-${new Date().toISOString().split('T')[0]}.csv`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        notifications.success('Success', 'Customers exported successfully')
+      } else {
+        throw new Error('Failed to export customers')
+      }
+    } catch (error) {
+      console.error('Error exporting customers:', error)
+      notifications.error('Error', 'Failed to export customers')
+    }
+  }
 
   const getCustomerTypeDisplay = (type: string) => {
     const types: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }> = {
@@ -172,10 +229,23 @@ export default function CustomersPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <Users className="h-12 w-12 text-gray-400 mx-auto mb-4 animate-pulse" />
-          <p className="text-gray-500">Loading customers...</p>
-        </div>
+        <LoadingState />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <EmptyState
+          icon={Users}
+          title="Error Loading Customers"
+          description={error}
+          action={{
+            label: "Try Again",
+            onClick: loadCustomers
+          }}
+        />
       </div>
     )
   }
@@ -188,11 +258,11 @@ export default function CustomersPage() {
         subtitle="Manage customer relationships and track purchasing patterns"
       >
         <div className="flex space-x-3">
-          <Button variant="outline">
+          <Button variant="outline" onClick={handleExport}>
             <Download className="h-4 w-4 mr-2" />
             Export
           </Button>
-          <Button>
+          <Button onClick={() => setShowAddModal(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Add Customer
           </Button>
@@ -403,17 +473,26 @@ export default function CustomersPage() {
               label: 'Actions',
               render: (customer: Customer) => (
                 <div className="flex justify-end space-x-2">
-                  <Button variant="ghost" size="sm">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openEditModal(customer)}
+                  >
                     <Edit className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-600 hover:text-red-700"
+                    onClick={() => openDeleteModal(customer)}
+                  >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               )
             }
           ]}
-          data={filteredCustomers}
+          data={customers}
           empty={{
             title: "No customers found",
             description: searchTerm || selectedType !== 'all'
@@ -421,11 +500,24 @@ export default function CustomersPage() {
               : 'Get started by adding your first customer',
             action: {
               label: "Add Customer",
-              onClick: () => console.log('Add Customer clicked')
+              onClick: () => setShowAddModal(true)
             }
           }}
         />
       </div>
+
+      {/* Customer Modals */}
+      <CustomerModals
+        showAddModal={showAddModal}
+        showEditModal={showEditModal}
+        showDeleteModal={showDeleteModal}
+        selectedCustomer={selectedCustomer}
+        isLoading={modalLoading}
+        onClose={closeModals}
+        onAdd={handleAddCustomer}
+        onEdit={handleEditCustomer}
+        onDelete={handleDeleteCustomer}
+      />
     </div>
   )
 }

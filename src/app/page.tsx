@@ -9,10 +9,17 @@ import {
   DollarSign,
   AlertTriangle,
   Activity,
-  BarChart3
+  BarChart3,
+  Store,
+  FileText
 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { StatCard, PageHeader, QuickAction, ActivityItem, EmptyState } from '@/components/shared/DesignSystem'
+import { updateManager } from '@/lib/update-manager'
+import { SignedIn, SignedOut, RedirectToSignIn } from "@clerk/nextjs"
+import { useAuth } from "@/lib/use-auth"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
 
 interface DashboardStats {
   totalSales: number
@@ -26,6 +33,7 @@ interface DashboardStats {
 }
 
 export default function Dashboard() {
+  const { userName, userEmail } = useAuth()
   const [stats, setStats] = useState<DashboardStats>({
     totalSales: 0,
     totalRevenue: 0,
@@ -37,19 +45,55 @@ export default function Dashboard() {
     pendingOrders: 0
   })
 
-  useEffect(() => {
-    // Simulate fetching dashboard data
-    // In real implementation, this would fetch from your API
-    setStats({
-      totalSales: 1456,
-      totalRevenue: 9870000, // ~9.87M UGX
-      totalProducts: 67,
-      lowStockProducts: 5,
-      todaySales: 23,
-      todayRevenue: 485000, // ~485K UGX
-      activeCustomers: 234,
-      pendingOrders: 3
+  const updateStats = (newSaleData?: any) => {
+    setStats(prev => {
+      const updated = { ...prev }
+
+      if (newSaleData) {
+        // Update based on new sale
+        updated.totalSales += 1
+        updated.totalRevenue += newSaleData.totalAmount || 0
+        updated.todaySales += 1
+        updated.todayRevenue += newSaleData.totalAmount || 0
+        updated.activeCustomers = Math.max(updated.activeCustomers, prev.activeCustomers + 1)
+      } else {
+        // Initial stats
+        updated.totalSales = 1456
+        updated.totalRevenue = 9870000
+        updated.totalProducts = 67
+        updated.lowStockProducts = 5
+        updated.todaySales = 23
+        updated.todayRevenue = 485000
+        updated.activeCustomers = 234
+        updated.pendingOrders = 3
+      }
+
+      return updated
     })
+  }
+
+  useEffect(() => {
+    // Initialize dashboard data
+    updateStats()
+  }, [])
+
+  // Listen for real-time dashboard updates
+  useEffect(() => {
+    const unsubscribe = updateManager.subscribe('dashboard_updated', (event) => {
+      console.log('Dashboard: Update received', event.data)
+      updateStats(event.data)
+    })
+
+    // Also listen for sales completion events
+    const unsubscribeSales = updateManager.subscribe('sale_completed', (event) => {
+      console.log('Dashboard: Sale completed, updating metrics', event.data)
+      updateStats(event.data)
+    })
+
+    return () => {
+      unsubscribe()
+      unsubscribeSales()
+    }
   }, [])
 
   const statCards = [
@@ -120,15 +164,17 @@ export default function Dashboard() {
   ]
 
   return (
-    <div className="space-y-8">
-      {/* Page Header */}
-      <PageHeader
-        title="Dashboard"
-        subtitle="Welcome back! Here's what's happening with your store today."
-      />
+    <>
+      <SignedIn>
+        <div className="space-y-8">
+          {/* Page Header */}
+          <PageHeader
+            title="Dashboard"
+            subtitle={`Welcome back, ${userName || 'User'}! Here's what's happening with your store today.`}
+          />
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statCards.map((stat, index) => (
           <StatCard
             key={index}
@@ -154,10 +200,10 @@ export default function Dashboard() {
               onClick={() => console.log('New Sale clicked')}
             />
             <QuickAction
-              title="Add Product"
-              icon={Package}
+              title="Generate Report"
+              icon={FileText}
               variant="success"
-              onClick={() => console.log('Add Product clicked')}
+              onClick={() => console.log('Generate Report clicked')}
             />
             <QuickAction
               title="Add Customer"
@@ -237,5 +283,11 @@ export default function Dashboard() {
         </div>
       </div>
     </div>
+      </SignedIn>
+
+      <SignedOut>
+        <RedirectToSignIn />
+      </SignedOut>
+    </>
   )
 }

@@ -24,7 +24,18 @@ import {
   Eye,
   Edit,
   Trash2,
-  Plus
+  Plus,
+  Download,
+  Upload,
+  ChevronLeft,
+  ChevronRight,
+  RefreshCw,
+  ArrowUpDown,
+  MoreHorizontal,
+  FileDown,
+  FileUp,
+  Printer,
+  Mail
 } from 'lucide-react'
 import Link from 'next/link'
 import {
@@ -37,6 +48,14 @@ import {
   StatusBadge
 } from '@/components/shared/DesignSystem'
 import { formatCurrency } from '@/lib/utils'
+import { updateManager } from '@/lib/update-manager'
+import { notifications } from '@/lib/notifications-simple'
+import {
+  EditInventoryModal,
+  DeleteInventoryModal,
+  ImportModal,
+  ExportModal
+} from '@/components/inventory/InventoryModals'
 
 interface InventoryItem {
   id: string
@@ -70,31 +89,61 @@ export default function InventoryPage() {
   const [inventory, setInventory] = useState<InventoryItem[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('all')
-  const [selectedBranch, setSelectedBranch] = useState('all')
+  const [selectedBranch, setSelectedBranch] = useState('cmgq8tx590000lras30r8autd') // Default to Branch A (Main Branch - Nairobi)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalItems, setTotalItems] = useState(0)
+  const [itemsPerPage] = useState(40)
+
+  // Export/Import state
+  const [isExporting, setIsExporting] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+
+  // Modal states
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [selectedItems, setSelectedItems] = useState<string[]>([])
+  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null)
+  const [isModalLoading, setIsModalLoading] = useState(false)
 
   useEffect(() => {
     loadInventory()
 
-    // Listen for inventory updates from POS transactions
+    // Listen for inventory updates from both the old system and new update manager
     const handleInventoryUpdate = (event: CustomEvent) => {
-      console.log('Inventory update received:', event.detail)
-
-      // Reload inventory to get the latest data
+      console.log('Inventory update received (old system):', event.detail)
       loadInventory(selectedBranch)
     }
 
-    // Add event listener
+    // Subscribe to new update manager events
+    const unsubscribeInventory = updateManager.subscribe('inventory_updated', (event) => {
+      console.log('Inventory update received (new system):', event.data)
+      loadInventory(selectedBranch)
+    })
+
+    // Subscribe to sale completed events as they also affect inventory
+    const unsubscribeSales = updateManager.subscribe('sale_completed', (event) => {
+      console.log('Sale completed, reloading inventory:', event.data)
+      loadInventory(selectedBranch)
+    })
+
+    // Keep old event listener for backward compatibility
     window.addEventListener('inventoryUpdate', handleInventoryUpdate as EventListener)
 
-    // Cleanup event listener on unmount
+    // Cleanup all event listeners on unmount
     return () => {
       window.removeEventListener('inventoryUpdate', handleInventoryUpdate as EventListener)
+      unsubscribeInventory()
+      unsubscribeSales()
     }
   }, [])
 
-  const loadInventory = async (branchId?: string, lowStock?: boolean) => {
+  const loadInventory = async (branchId?: string, lowStock?: boolean, page?: number) => {
     try {
       setIsLoading(true)
       setError(null)
@@ -106,6 +155,10 @@ export default function InventoryPage() {
       if (lowStock) {
         params.append('lowStock', 'true')
       }
+      if (page) {
+        params.append('page', page.toString())
+        params.append('limit', itemsPerPage.toString())
+      }
 
       const response = await fetch(`/api/inventory?${params.toString()}`)
       if (!response.ok) {
@@ -113,14 +166,189 @@ export default function InventoryPage() {
       }
 
       const data = await response.json()
-      setInventory(data.success ? data.data : [])
+      if (data.success) {
+        setInventory(data.data || [])
+        setTotalItems(data.total || data.data?.length || 0)
+      } else {
+        setInventory([])
+        setTotalItems(0)
+      }
     } catch (error) {
       console.error('Error loading inventory:', error)
       setError('Failed to load inventory. Please try again.')
       setInventory([])
+      setTotalItems(0)
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // Export functionality
+  const handleExport = async (format: 'csv' | 'excel' | 'pdf' = 'csv') => {
+    setIsExporting(true)
+    try {
+      const params = new URLSearchParams()
+      params.append('format', format)
+      params.append('branchId', selectedBranch)
+      params.append('category', selectedCategory)
+
+      const response = await fetch(`/api/inventory/export?${params.toString()}`)
+      if (!response.ok) {
+        throw new Error('Failed to export inventory')
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `inventory-export-${new Date().toISOString().split('T')[0]}.${format}`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+
+      setShowExportModal(false)
+    } catch (error) {
+      console.error('Error exporting inventory:', error)
+      alert('Failed to export inventory. Please try again.')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  // Import functionality
+  const handleImport = async (file: File) => {
+    setIsImporting(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('branchId', selectedBranch)
+
+      const response = await fetch('/api/inventory/import', {
+        method: 'POST',
+        body: formData
+      })
+
+      const result = await response.json()
+      if (result.success) {
+        alert(`Successfully imported ${result.importedCount || 0} products`)
+        setShowImportModal(false)
+        loadInventory(selectedBranch)
+      } else {
+        throw new Error(result.error || 'Failed to import products')
+      }
+    } catch (error) {
+      console.error('Error importing inventory:', error)
+      alert(`Error: ${error instanceof Error ? error.message : 'Failed to import products'}`)
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
+  // Pagination helpers
+  const totalPages = Math.ceil(totalItems / itemsPerPage)
+  const paginatedInventory = inventory.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  )
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
+    loadInventory(selectedBranch, false, page)
+  }
+
+  // CRUD operations
+  const handleEditItem = async (item: InventoryItem & { batchNumber?: string }) => {
+    setIsModalLoading(true)
+    try {
+      const response = await fetch(`/api/inventory/${item.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quantity: item.quantity,
+          minStock: item.minStock,
+          maxStock: item.maxStock,
+          unitPrice: item.variation?.unitPrice || 0,
+          batchNumber: item.batchNumber
+        })
+      })
+
+      if (response.ok) {
+        loadInventory(selectedBranch)
+      } else {
+        throw new Error('Failed to update item')
+      }
+    } catch (error) {
+      console.error('Error updating item:', error)
+      throw error
+    } finally {
+      setIsModalLoading(false)
+    }
+  }
+
+  const handleDeleteItem = async (id: string) => {
+    setIsModalLoading(true)
+    try {
+      const response = await fetch(`/api/inventory/${id}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        loadInventory(selectedBranch)
+      } else {
+        throw new Error('Failed to delete item')
+      }
+    } catch (error) {
+      console.error('Error deleting item:', error)
+      throw error
+    } finally {
+      setIsModalLoading(false)
+    }
+  }
+
+  // Bulk actions
+  const handleSelectAll = () => {
+    if (selectedItems.length === paginatedInventory.length) {
+      setSelectedItems([])
+    } else {
+      setSelectedItems(paginatedInventory.map(item => item.id))
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedItems.length === 0) return
+
+    if (!confirm(`Are you sure you want to delete ${selectedItems.length} inventory items?`)) {
+      return
+    }
+
+    try {
+      const response = await fetch('/api/inventory/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedItems })
+      })
+
+      const result = await response.json()
+      if (result.success) {
+        setSelectedItems([])
+        loadInventory(selectedBranch)
+        notifications.success('Success', `Successfully deleted ${selectedItems.length} items`)
+      } else {
+        throw new Error(result.error || 'Failed to delete items')
+      }
+    } catch (error) {
+      console.error('Error deleting items:', error)
+      notifications.error('Error', 'Failed to delete items. Please try again.')
+    }
+  }
+
+  const closeModal = () => {
+    setShowEditModal(false)
+    setShowDeleteModal(false)
+    setShowImportModal(false)
+    setShowExportModal(false)
+    setSelectedItem(null)
   }
 
   // Debounced search function
@@ -178,6 +406,12 @@ export default function InventoryPage() {
     return matchesSearch && matchesCategory && matchesBranch
   })
 
+  // Apply pagination to filtered results
+  const paginatedFilteredInventory = filteredInventory.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  )
+
   if (error) {
     return (
       <div className="container mx-auto p-6">
@@ -197,24 +431,22 @@ export default function InventoryPage() {
         subtitle="Manage stock levels across all branches"
       >
         <div className="flex space-x-3">
-          <ActionCard
-            title="Stock Adjustments"
-            icon={BarChart3}
-            color="bg-blue-500"
-            description="View stock history"
-          />
-          <ActionCard
-            title="Transfer Stock"
-            icon={Package}
-            color="bg-purple-500"
-            description="Move between branches"
-          />
-          <ActionCard
-            title="Batch Management"
-            icon={Plus}
-            color="bg-emerald-500"
-            description="Manage batches"
-          />
+          <Button variant="outline" onClick={() => setShowImportModal(true)}>
+            <Upload className="h-4 w-4 mr-2" />
+            Import
+          </Button>
+          <Button variant="outline" onClick={() => setShowExportModal(true)}>
+            <Download className="h-4 w-4 mr-2" />
+            Export
+          </Button>
+          <Button variant="outline" onClick={() => loadInventory(selectedBranch)}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+          <Button>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Item
+          </Button>
         </div>
       </PageHeader>
 
@@ -306,6 +538,46 @@ export default function InventoryPage() {
           </div>
         </div>
 
+        {/* Bulk Actions */}
+        {selectedItems.length > 0 && (
+          <div className="bg-card rounded-xl border border-border p-4 mb-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <span className="text-sm font-medium text-primary">
+                  {selectedItems.length} item{selectedItems.length !== 1 ? 's' : ''} selected
+                </span>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleExport('csv')}
+                    className="flex items-center space-x-2"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span>Export Selected</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleBulkDelete}
+                    className="flex items-center space-x-2 text-red-600 border-red-200 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span>Delete Selected</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedItems([])}
+                  >
+                    Clear Selection
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Inventory Table */}
         <div className="rounded-lg border border-border overflow-hidden">
           {isLoading ? (
@@ -316,10 +588,19 @@ export default function InventoryPage() {
             <table className="w-full">
               <thead className="bg-surface">
                 <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider w-12">
+                    <input
+                      type="checkbox"
+                      className="rounded border-gray-300 text-primary focus:ring-primary"
+                      checked={selectedItems.length === paginatedInventory.length && paginatedInventory.length > 0}
+                      onChange={handleSelectAll}
+                    />
+                  </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Product</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">SKU</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Category</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Branch</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Batch Number</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Stock</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Status</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Unit Price</th>
@@ -328,9 +609,9 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody className="bg-card divide-y divide-border">
-                {filteredInventory.length === 0 ? (
+                {paginatedInventory.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-8">
+                    <td colSpan={11} className="text-center py-8">
                       <EmptyState
                         icon={Package}
                         title="No inventory items found"
@@ -339,8 +620,22 @@ export default function InventoryPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredInventory.map((item) => (
+                  paginatedInventory.map((item) => (
                     <tr key={item.id} className="hover:bg-surface transition-colors">
+                      <td className="px-6 py-4 whitespace-nowrap w-12">
+                        <input
+                          type="checkbox"
+                          className="rounded border-gray-300 text-primary focus:ring-primary"
+                          checked={selectedItems.includes(item.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedItems([...selectedItems, item.id])
+                            } else {
+                              setSelectedItems(selectedItems.filter(id => id !== item.id))
+                            }
+                          }}
+                        />
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex flex-col">
                           <span className="font-medium text-primary">{item.product.name}</span>
@@ -356,6 +651,9 @@ export default function InventoryPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary">{item.branch.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary">
+                        {item.batch?.batchNumber || 'DEFAULT'}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex flex-col">
                           <span className={`font-medium ${item.quantity <= item.minStock ? 'text-red-600' : 'text-primary'}`}>
@@ -379,11 +677,25 @@ export default function InventoryPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         <div className="flex justify-end space-x-2">
-                          <button className="p-2 bg-card border border-border rounded hover:bg-surface transition-colors">
-                            <Eye className="h-4 w-4 text-secondary" />
-                          </button>
-                          <button className="p-2 bg-card border border-border rounded hover:bg-surface transition-colors">
+                          <button
+                            className="p-2 bg-card border border-border rounded hover:bg-surface transition-colors"
+                            onClick={() => {
+                              setSelectedItem(item)
+                              setShowEditModal(true)
+                            }}
+                            title="Edit Item"
+                          >
                             <Edit className="h-4 w-4 text-secondary" />
+                          </button>
+                          <button
+                            className="p-2 bg-card border border-border rounded hover:bg-surface transition-colors text-red-600 hover:bg-red-50"
+                            onClick={() => {
+                              setSelectedItem(item)
+                              setShowDeleteModal(true)
+                            }}
+                            title="Delete Item"
+                          >
+                            <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                       </td>
@@ -394,7 +706,96 @@ export default function InventoryPage() {
             </table>
           )}
         </div>
+
+        {/* Pagination Controls */}
+        {!isLoading && filteredInventory.length > 0 && (
+          <div className="bg-card rounded-xl border border-border p-4 mt-4">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-secondary">
+                Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredInventory.length)} of {filteredInventory.length} results
+              </div>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous
+                </Button>
+                <div className="flex items-center space-x-1">
+                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                    const pageNumber = i + 1
+                    return (
+                      <Button
+                        key={pageNumber}
+                        variant={currentPage === pageNumber ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handlePageChange(pageNumber)}
+                      >
+                        {pageNumber}
+                      </Button>
+                    )
+                  })}
+                  {totalPages > 5 && (
+                    <>
+                      <span className="px-2 text-sm text-secondary">...</span>
+                      <Button
+                        variant={currentPage === totalPages ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handlePageChange(totalPages)}
+                      >
+                        {totalPages}
+                      </Button>
+                    </>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* CRUD Modals */}
+      <EditInventoryModal
+        selectedItem={selectedItem}
+        showEditModal={showEditModal}
+        onClose={closeModal}
+        onEdit={handleEditItem}
+        isLoading={isModalLoading}
+      />
+
+      <DeleteInventoryModal
+        selectedItem={selectedItem}
+        showDeleteModal={showDeleteModal}
+        onClose={closeModal}
+        onDelete={handleDeleteItem}
+        isLoading={isModalLoading}
+      />
+
+      <ImportModal
+        showImportModal={showImportModal}
+        onClose={closeModal}
+        onImport={handleImport}
+        isLoading={isImporting}
+      />
+
+      <ExportModal
+        showExportModal={showExportModal}
+        onClose={closeModal}
+        onExport={handleExport}
+        isLoading={isExporting}
+      />
     </div>
   )
 }

@@ -21,6 +21,8 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatDate, formatDateTime, getPaymentMethodDisplay, getSaleStatusDisplay } from '@/lib/utils'
+import { updateManager } from '@/lib/update-manager'
+import SaleDetailModal from '@/components/sales/SaleDetailModal'
 
 interface Sale {
   id: string
@@ -56,160 +58,47 @@ export default function SalesPage() {
   const [selectedPayment, setSelectedPayment] = useState('all')
   const [dateRange, setDateRange] = useState('today')
   const [isLoading, setIsLoading] = useState(true)
+  const [selectedSale, setSelectedSale] = useState<Sale | null>(null)
+  const [showDetailModal, setShowDetailModal] = useState(false)
+
+  const loadSales = async () => {
+    try {
+      setIsLoading(true)
+      const params = new URLSearchParams()
+      if (selectedStatus !== 'all') {
+        params.append('status', selectedStatus)
+      }
+      if (selectedPayment !== 'all') {
+        params.append('paymentMethod', selectedPayment)
+      }
+
+      const response = await fetch(`/api/sales?${params.toString()}`)
+      if (response.ok) {
+        const result = await response.json()
+        if (result.success) {
+          setSales(result.data)
+        }
+      }
+    } catch (error) {
+      console.error('Error loading sales:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   useEffect(() => {
-    // Simulate fetching sales data
-    setTimeout(() => {
-      setSales([
-        {
-          id: '1',
-          saleNumber: 'SALE-20241005-001',
-          customerName: 'John Kamau',
-          customerType: 'REGULAR',
-          items: [
-            {
-              id: '1-1',
-              productName: 'Coca-Cola 1L',
-              quantity: 2,
-              unitPrice: 150,
-              totalPrice: 300
-            },
-            {
-              id: '1-2',
-              productName: 'Fanta Orange 1L',
-              quantity: 1,
-              unitPrice: 140,
-              totalPrice: 140
-            }
-          ],
-          subtotal: 440,
-          taxAmount: 70.40,
-          discountAmount: 0,
-          totalAmount: 510.40,
-          paymentMethod: 'CASH',
-          paymentStatus: 'PAID',
-          status: 'COMPLETED',
-          branch: 'Main Store',
-          cashierName: 'Admin User',
-          createdAt: '2024-10-05T09:15:00Z',
-          notes: 'Customer requested carrier bag'
-        },
-        {
-          id: '2',
-          saleNumber: 'SALE-20241005-002',
-          customerName: 'Mary Wanjiku',
-          customerType: 'WHOLESALE',
-          items: [
-            {
-              id: '2-1',
-              productName: 'Coca-Cola 500ml',
-              quantity: 24,
-              unitPrice: 80,
-              totalPrice: 1920
-            },
-            {
-              id: '2-2',
-              productName: 'Aquafina Water 1L',
-              quantity: 12,
-              unitPrice: 80,
-              totalPrice: 960
-            }
-          ],
-          subtotal: 2880,
-          taxAmount: 460.80,
-          discountAmount: 288, // 10% discount
-          totalAmount: 3052.80,
-          paymentMethod: 'MOBILE_MONEY',
-          paymentStatus: 'PAID',
-          status: 'COMPLETED',
-          branch: 'Main Store',
-          cashierName: 'Admin User',
-          createdAt: '2024-10-05T10:30:00Z'
-        },
-        {
-          id: '3',
-          saleNumber: 'SALE-20241005-003',
-          customerName: 'ABC Supermarket Ltd',
-          customerType: 'CORPORATE',
-          items: [
-            {
-              id: '3-1',
-              productName: 'Mountain Dew Extreme 500ml',
-              quantity: 48,
-              unitPrice: 120,
-              totalPrice: 5760
-            },
-            {
-              id: '3-2',
-              productName: 'Fresh Apple Juice 1L',
-              quantity: 24,
-              unitPrice: 160,
-              totalPrice: 3840
-            }
-          ],
-          subtotal: 9600,
-          taxAmount: 1536,
-          discountAmount: 960, // 10% discount
-          totalAmount: 10176,
-          paymentMethod: 'BANK_TRANSFER',
-          paymentStatus: 'PENDING',
-          status: 'PENDING',
-          branch: 'Main Store',
-          cashierName: 'Admin User',
-          createdAt: '2024-10-05T11:45:00Z',
-          notes: 'Payment expected in 2-3 business days'
-        },
-        {
-          id: '4',
-          saleNumber: 'SALE-20241004-015',
-          customerName: 'David Ochieng',
-          customerType: 'REGULAR',
-          items: [
-            {
-              id: '4-1',
-              productName: 'Fanta Orange 1L',
-              quantity: 1,
-              unitPrice: 140,
-              totalPrice: 140
-            }
-          ],
-          subtotal: 140,
-          taxAmount: 22.40,
-          discountAmount: 0,
-          totalAmount: 162.40,
-          paymentMethod: 'CARD',
-          paymentStatus: 'PAID',
-          status: 'COMPLETED',
-          branch: 'Main Store',
-          cashierName: 'Admin User',
-          createdAt: '2024-10-04T16:20:00Z'
-        },
-        {
-          id: '5',
-          saleNumber: 'SALE-20241004-014',
-          items: [
-            {
-              id: '5-1',
-              productName: 'Aquafina Water 1L',
-              quantity: 2,
-              unitPrice: 80,
-              totalPrice: 160
-            }
-          ],
-          subtotal: 160,
-          taxAmount: 25.60,
-          discountAmount: 0,
-          totalAmount: 185.60,
-          paymentMethod: 'CASH',
-          paymentStatus: 'PAID',
-          status: 'COMPLETED',
-          branch: 'Main Store',
-          cashierName: 'Admin User',
-          createdAt: '2024-10-04T14:30:00Z'
-        }
-      ])
-      setIsLoading(false)
-    }, 800)
+    loadSales()
+  }, [selectedStatus, selectedPayment])
+
+  // Listen for real-time sale updates
+  useEffect(() => {
+    const unsubscribe = updateManager.subscribe('sale_completed', (event) => {
+      console.log('Sales page: New sale received', event.data)
+      // Reload sales data to include the new sale
+      loadSales()
+    })
+
+    return unsubscribe
   }, [])
 
   const filteredSales = sales.filter(sale => {
@@ -220,10 +109,33 @@ export default function SalesPage() {
     const matchesStatus = selectedStatus === 'all' || sale.status === selectedStatus
     const matchesPayment = selectedPayment === 'all' || sale.paymentMethod === selectedPayment
 
-    // Simple date filtering for demo
-    const saleDate = new Date(sale.createdAt).toDateString()
-    const today = new Date().toDateString()
-    const matchesDate = dateRange === 'today' ? saleDate === today : true
+    // Enhanced date filtering
+    const saleDate = new Date(sale.createdAt)
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+    const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    let matchesDate = true
+    switch (dateRange) {
+      case 'today':
+        matchesDate = saleDate >= today
+        break
+      case 'yesterday':
+        matchesDate = saleDate >= yesterday && saleDate < today
+        break
+      case 'week':
+        matchesDate = saleDate >= weekStart
+        break
+      case 'month':
+        matchesDate = saleDate >= monthStart
+        break
+      case 'all':
+      default:
+        matchesDate = true
+        break
+    }
 
     return matchesSearch && matchesStatus && matchesPayment && matchesDate
   })
@@ -259,6 +171,190 @@ export default function SalesPage() {
     return colors[status] || 'text-gray-600'
   }
 
+  const handleViewSale = (sale: Sale) => {
+    setSelectedSale(sale)
+    setShowDetailModal(true)
+  }
+
+  const handleExport = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (selectedStatus !== 'all') {
+        params.append('status', selectedStatus)
+      }
+      if (selectedPayment !== 'all') {
+        params.append('paymentMethod', selectedPayment)
+      }
+      if (dateRange !== 'all') {
+        params.append('dateRange', dateRange)
+      }
+      params.append('format', 'csv')
+
+      const response = await fetch(`/api/sales/export?${params.toString()}`)
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `sales-export-${new Date().toISOString().split('T')[0]}.csv`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+      } else {
+        throw new Error('Failed to export sales')
+      }
+    } catch (error) {
+      console.error('Error exporting sales:', error)
+      alert('Failed to export sales. Please try again.')
+    }
+  }
+
+  const handleExportSingleSale = async (sale: Sale) => {
+    try {
+      const response = await fetch(`/api/sales/export?format=json&saleId=${sale.id}`)
+      if (response.ok) {
+        const result = await response.json()
+        if (result.success) {
+          const dataStr = JSON.stringify(result.data, null, 2)
+          const blob = new Blob([dataStr], { type: 'application/json' })
+          const url = window.URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `sale-${sale.saleNumber}-${new Date().toISOString().split('T')[0]}.json`
+          document.body.appendChild(a)
+          a.click()
+          window.URL.revokeObjectURL(url)
+          document.body.removeChild(a)
+        }
+      }
+    } catch (error) {
+      console.error('Error exporting sale:', error)
+      alert('Failed to export sale. Please try again.')
+    }
+  }
+
+  const handlePrintReceipt = (sale: Sale) => {
+    // Create a printable receipt
+    const receiptContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 400px; margin: 0 auto; padding: 20px;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h2 style="margin: 0;">SALES RECEIPT</h2>
+          <p style="margin: 5px 0;">${sale.branch}</p>
+        </div>
+
+        <div style="margin-bottom: 20px;">
+          <p><strong>Sale #:</strong> ${sale.saleNumber}</p>
+          <p><strong>Date:</strong> ${formatDate(sale.createdAt)}</p>
+          <p><strong>Time:</strong> ${formatDateTime(sale.createdAt)}</p>
+          <p><strong>Cashier:</strong> ${sale.cashierName}</p>
+        </div>
+
+        ${sale.customerName ? `
+        <div style="margin-bottom: 20px;">
+          <p><strong>Customer:</strong> ${sale.customerName}</p>
+          ${sale.customerPhone ? `<p><strong>Phone:</strong> ${sale.customerPhone}</p>` : ''}
+        </div>
+        ` : ''}
+
+        <div style="margin-bottom: 20px;">
+          <h4 style="margin: 0 0 10px 0;">Items:</h4>
+          ${sale.items.map(item => `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+              <span>${item.productName} x ${item.quantity}</span>
+              <span>${formatCurrency(item.totalPrice)}</span>
+            </div>
+          `).join('')}
+        </div>
+
+        <div style="border-top: 1px solid #ccc; padding-top: 10px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+            <span>Subtotal:</span>
+            <span>${formatCurrency(sale.subtotal)}</span>
+          </div>
+          ${sale.discountAmount > 0 ? `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+              <span>Discount:</span>
+              <span>-${formatCurrency(sale.discountAmount)}</span>
+            </div>
+          ` : ''}
+          <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 18px;">
+            <span>Total:</span>
+            <span>${formatCurrency(sale.totalAmount)}</span>
+          </div>
+        </div>
+
+        <div style="margin-top: 20px; text-align: center;">
+          <p><strong>Payment:</strong> ${getPaymentMethodDisplay(sale.paymentMethod)}</p>
+          <p><strong>Status:</strong> ${getSaleStatusDisplay(sale.status)}</p>
+        </div>
+
+        <div style="margin-top: 30px; text-align: center; font-size: 12px;">
+          <p>Thank you for your business!</p>
+        </div>
+      </div>
+    `
+
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(receiptContent)
+      printWindow.document.close()
+      printWindow.print()
+      printWindow.close()
+    }
+  }
+
+  const handleProcessReturn = async (sale: Sale) => {
+    const reason = prompt(`Please enter the reason for returning sale ${sale.saleNumber}:`)
+    if (!reason) return
+
+    const confirmRefund = confirm(
+      `Are you sure you want to refund ${formatCurrency(sale.totalAmount)} for sale ${sale.saleNumber}?\n\nReason: ${reason}`
+    )
+
+    if (!confirmRefund) return
+
+    try {
+      // Create a return sale record (simplified version)
+      const response = await fetch('/api/sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          saleNumber: `RETURN-${sale.saleNumber}`,
+          items: sale.items.map(item => ({
+            product: { id: item.id, name: item.productName, price: item.unitPrice, stock: 999 },
+            quantity: -item.quantity, // Negative quantity for returns
+            unitPrice: item.unitPrice,
+            totalPrice: -item.totalPrice
+          })),
+          subtotal: -sale.subtotal,
+          discount: -sale.discountAmount,
+          tax: -sale.taxAmount,
+          total: -sale.totalAmount,
+          paymentMethod: sale.paymentMethod,
+          customer: sale.customerName ? {
+            id: 'return-customer',
+            name: sale.customerName,
+            customerType: sale.customerType
+          } : null,
+          branchId: 'default',
+          notes: `RETURN: ${reason} (Original: ${sale.saleNumber})`
+        })
+      })
+
+      if (response.ok) {
+        alert(`Sale ${sale.saleNumber} has been refunded successfully.\nAmount: ${formatCurrency(sale.totalAmount)}\nReason: ${reason}`)
+        setShowDetailModal(false)
+        await loadSales()
+      } else {
+        throw new Error('Failed to process return')
+      }
+    } catch (error) {
+      console.error('Error processing return:', error)
+      alert('Failed to process return. Please try again.')
+    }
+  }
+
   const summaryStats = {
     totalSales: sales.filter(s => s.status === 'COMPLETED').length,
     totalRevenue: sales.filter(s => s.status === 'COMPLETED').reduce((sum, s) => sum + s.totalAmount, 0),
@@ -280,11 +376,11 @@ export default function SalesPage() {
         subtitle="View and manage all sales transactions"
       >
         <div className="flex space-x-3">
-          <Button variant="outline">
+          <Button variant="outline" onClick={handleExport}>
             <Download className="h-4 w-4 mr-2" />
             Export
           </Button>
-          <Button>
+          <Button onClick={() => window.location.href = '/pos'}>
             <Receipt className="h-4 w-4 mr-2" />
             New Sale
           </Button>
@@ -524,7 +620,12 @@ export default function SalesPage() {
               label: 'Actions',
               render: (sale: Sale) => (
                 <div className="flex justify-end">
-                  <Button variant="ghost" size="sm">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleViewSale(sale)}
+                    title="View sale details"
+                  >
                     <Eye className="h-4 w-4" />
                   </Button>
                 </div>
@@ -538,6 +639,16 @@ export default function SalesPage() {
           }}
         />
       </div>
+
+      {/* Sale Detail Modal */}
+      <SaleDetailModal
+        sale={selectedSale}
+        isOpen={showDetailModal}
+        onClose={() => setShowDetailModal(false)}
+        onPrintReceipt={handlePrintReceipt}
+        onExportSale={handleExportSingleSale}
+        onProcessReturn={handleProcessReturn}
+      />
     </div>
   )
 }

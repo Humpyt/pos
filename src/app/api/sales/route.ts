@@ -50,6 +50,19 @@ export async function POST(request: NextRequest) {
           branchId: validBranchId,
           status: 'COMPLETED',
           paymentStatus: 'PAID'
+        },
+        include: {
+          items: true,
+          user: {
+            select: {
+              name: true
+            }
+          },
+          branch: {
+            select: {
+              name: true
+            }
+          }
         }
       })
 
@@ -95,27 +108,39 @@ export async function POST(request: NextRequest) {
       return sale
     })
 
-    // Broadcast inventory update to connected clients
-    // This will be used for real-time updates
-    const broadcastUpdate = {
-      type: 'inventory_update',
-      timestamp: new Date().toISOString(),
-      branchId: validBranchId,
+    // Create update event data for real-time updates
+    const updateData = {
+      saleNumber: result.saleNumber,
       items: items.map(item => ({
         productId: item.product.id,
-        quantitySold: item.quantity
-      }))
+        productName: item.product.name,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        totalPrice: item.totalPrice
+      })),
+      subtotal,
+      discountAmount: discount,
+      taxAmount: tax,
+      totalAmount: total,
+      paymentMethod,
+      branchId: validBranchId,
+      customerId: customer?.id,
+      userId: user.id,
+      createdAt: result.createdAt.toISOString()
     }
 
-    // In a real implementation, you would use WebSocket or SSE
-    // For now, we'll just return the success response
-    console.log('Inventory update broadcast:', broadcastUpdate)
+    // Trigger real-time update event
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('saleCompleted', { detail: updateData }))
+    }
+
+    console.log('Real-time updates triggered for sale:', updateData)
 
     return NextResponse.json({
       success: true,
       data: {
         sale: result,
-        inventoryUpdates: broadcastUpdate
+        updateData
       }
     })
 
@@ -123,6 +148,97 @@ export async function POST(request: NextRequest) {
     console.error('Error processing sale:', error)
     return NextResponse.json(
       { success: false, error: 'Failed to process sale' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const branchId = searchParams.get('branchId')
+    const status = searchParams.get('status')
+    const limit = parseInt(searchParams.get('limit') || '50')
+    const offset = parseInt(searchParams.get('offset') || '0')
+
+    const where: any = {}
+    if (branchId && branchId !== 'all') {
+      where.branchId = branchId
+    }
+    if (status && status !== 'all') {
+      where.status = status
+    }
+
+    const sales = await prisma.sale.findMany({
+      where,
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                name: true
+              }
+            }
+          }
+        },
+        user: {
+          select: {
+            name: true
+          }
+        },
+        branch: {
+          select: {
+            name: true
+          }
+        },
+        customer: {
+          select: {
+            name: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      },
+      take: limit,
+      skip: offset
+    })
+
+    // Transform data to match expected format
+    const transformedSales = sales.map(sale => ({
+      id: sale.id,
+      saleNumber: sale.saleNumber,
+      customerName: sale.customer?.name,
+      customerType: sale.customer?.name ? 'REGULAR' : undefined,
+      items: sale.items.map(item => ({
+        id: item.id,
+        productName: item.product.name,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        totalPrice: item.totalPrice
+      })),
+      subtotal: sale.subtotal,
+      taxAmount: sale.taxAmount,
+      discountAmount: sale.discountAmount,
+      totalAmount: sale.totalAmount,
+      paymentMethod: sale.paymentMethod,
+      paymentStatus: sale.paymentStatus,
+      status: sale.status,
+      branch: sale.branch.name,
+      cashierName: sale.user.name,
+      createdAt: sale.createdAt.toISOString(),
+      notes: sale.notes
+    }))
+
+    return NextResponse.json({
+      success: true,
+      data: transformedSales
+    })
+
+  } catch (error) {
+    console.error('Error fetching sales:', error)
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch sales' },
       { status: 500 }
     )
   }

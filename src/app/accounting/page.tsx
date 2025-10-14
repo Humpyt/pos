@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { updateManager } from '@/lib/update-manager'
 
 interface Expense {
   id: string
@@ -56,8 +57,9 @@ export default function AccountingPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [selectedStatus, setSelectedStatus] = useState('all')
-  const [selectedBranch, setSelectedBranch] = useState('all')
+  const [selectedBranch, setSelectedBranch] = useState('Main Store') // Default to Branch A (Main Store)
   const [isLoading, setIsLoading] = useState(true)
+  const [totalRevenue, setTotalRevenue] = useState(174670) // Will be updated with real data
 
   useEffect(() => {
     // Simulate fetching accounting data
@@ -138,6 +140,30 @@ export default function AccountingPage() {
     }, 800)
   }, [])
 
+  // Listen for real-time accounting updates
+  useEffect(() => {
+    const unsubscribe = updateManager.subscribe('accounting_updated', (event) => {
+      console.log('Accounting page: Update received', event.data)
+      if (event.data.type === 'sale' && event.data.amount) {
+        // Update total revenue when new sales are made
+        setTotalRevenue(prev => prev + event.data.amount)
+      }
+    })
+
+    // Also listen for sales completion events
+    const unsubscribeSales = updateManager.subscribe('sale_completed', (event) => {
+      console.log('Accounting page: Sale completed, updating financial data', event.data)
+      if (event.data.totalAmount) {
+        setTotalRevenue(prev => prev + event.data.totalAmount)
+      }
+    })
+
+    return () => {
+      unsubscribe()
+      unsubscribeSales()
+    }
+  }, [])
+
   const filteredExpenses = expenses.filter(expense => {
     const matchesSearch =
       expense.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -153,9 +179,9 @@ export default function AccountingPage() {
   const categories = Array.from(new Set(expenses.map(expense => expense.category)))
   const branches = Array.from(new Set(expenses.map(expense => expense.branch)))
 
-  // Mock financial summary
+  // Mock financial summary (now with dynamic revenue)
   const financialSummary: FinancialSummary = {
-    totalRevenue: 174670,
+    totalRevenue: totalRevenue,
     totalExpenses: expenses.reduce((sum, expense) => sum + expense.amount, 0),
     grossProfit: 0, // Will be calculated
     netProfit: 0, // Will be calculated
@@ -165,9 +191,9 @@ export default function AccountingPage() {
       return acc
     }, {} as Record<string, number>),
     revenueByBranch: {
-      'Main Store': 98410,
-      'Branch 2 - Mombasa': 46820,
-      'Branch 3 - Kisumu': 29440
+      'Main Store': Math.round(totalRevenue * 0.6),
+      'Branch 2 - Mombasa': Math.round(totalRevenue * 0.25),
+      'Branch 3 - Kisumu': Math.round(totalRevenue * 0.15)
     },
     expensesByBranch: expenses.reduce((acc, expense) => {
       acc[expense.branch] = (acc[expense.branch] || 0) + expense.amount
