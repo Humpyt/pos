@@ -18,192 +18,236 @@ import {
   Package,
   AlertTriangle,
   CheckCircle,
-  Filter
+  Filter,
+  X
 } from 'lucide-react'
-import { PageHeader, StatCard, LoadingState, DataTable, StatusBadge } from '@/components/shared/DesignSystem'
+import { PageHeader, StatCard, LoadingState, DataTable, StatusBadge, EmptyState } from '@/components/shared/DesignSystem'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { updateManager } from '@/lib/update-manager'
+import ExpenseModal from '@/components/accounting/ExpenseModal'
+import ApprovalModal from '@/components/accounting/ApprovalModal'
 
-interface Expense {
-  id: string
-  category: string
-  description: string
-  amount: number
-  date: string
-  receiptNumber?: string
-  notes?: string
-  branch: string
-  approvedBy?: string
-  status: 'PENDING' | 'APPROVED' | 'REJECTED'
-  createdAt: string
-}
 
+// API Response Types
 interface FinancialSummary {
   totalRevenue: number
   totalExpenses: number
   grossProfit: number
   netProfit: number
   profitMargin: number
+  totalCOGS: number
   expenseBreakdown: Record<string, number>
   revenueByBranch: Record<string, number>
   expensesByBranch: Record<string, number>
+  period: {
+    start: string
+    end: string
+  }
+  summary: {
+    totalSales: number
+    totalExpensesCount: number
+    pendingExpenses: number
+    approvedExpenses: number
+    rejectedExpenses: number
+  }
 }
 
 export default function AccountingPage() {
-  const [expenses, setExpenses] = useState<Expense[]>([])
+  const [expenses, setExpenses] = useState<any[]>([])
+  const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null)
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [selectedStatus, setSelectedStatus] = useState('all')
-  const [selectedBranch, setSelectedBranch] = useState('Main Store') // Default to Branch A (Main Store)
+  const [selectedBranch, setSelectedBranch] = useState('all')
   const [isLoading, setIsLoading] = useState(true)
-  const [totalRevenue, setTotalRevenue] = useState(174670) // Will be updated with real data
+  const [error, setError] = useState<string | null>(null)
+
+  // Modal states
+  const [showExpenseModal, setShowExpenseModal] = useState(false)
+  const [showApprovalModal, setShowApprovalModal] = useState(false)
+  const [selectedExpense, setSelectedExpense] = useState<any>(null)
+  const [approvalAction, setApprovalAction] = useState<'approve' | 'reject'>('approve')
+
+  const fetchExpenses = async () => {
+    try {
+      setError(null)
+      const params = new URLSearchParams()
+      if (selectedBranch !== 'all') params.append('branchId', selectedBranch)
+      if (selectedCategory !== 'all') params.append('category', selectedCategory)
+      if (selectedStatus !== 'all') params.append('status', selectedStatus)
+      if (searchTerm) params.append('search', searchTerm)
+
+      const response = await fetch(`/api/expenses?${params.toString()}`)
+      const result = await response.json()
+
+      if (result.success) {
+        setExpenses(result.data.expenses)
+      } else {
+        throw new Error(result.error || 'Failed to fetch expenses')
+      }
+    } catch (error) {
+      console.error('Error fetching expenses:', error)
+      setError(error instanceof Error ? error.message : 'Failed to fetch expenses')
+    }
+  }
+
+  const fetchFinancialSummary = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (selectedBranch !== 'all') params.append('branchId', selectedBranch)
+
+      const response = await fetch(`/api/accounting/financial-summary?${params.toString()}`)
+      const result = await response.json()
+
+      if (result.success) {
+        setFinancialSummary(result.data)
+      } else {
+        throw new Error(result.error || 'Failed to fetch financial summary')
+      }
+    } catch (error) {
+      console.error('Error fetching financial summary:', error)
+      setError(error instanceof Error ? error.message : 'Failed to fetch financial summary')
+    }
+  }
+
+  const fetchBranches = async () => {
+    try {
+      const response = await fetch('/api/branches')
+      if (response.ok) {
+        const result = await response.json()
+        if (result.success) {
+          setBranches(result.data)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching branches:', error)
+    }
+  }
+
+  const loadData = async () => {
+    setIsLoading(true)
+    await Promise.all([
+      fetchExpenses(),
+      fetchFinancialSummary(),
+      fetchBranches()
+    ])
+    setIsLoading(false)
+  }
 
   useEffect(() => {
-    // Simulate fetching accounting data
-    setTimeout(() => {
-      setExpenses([
-        {
-          id: '1',
-          category: 'Rent',
-          description: 'Monthly rent for Main Store',
-          amount: 45000,
-          date: '2024-10-01',
-          receiptNumber: 'RENT-001',
-          branch: 'Main Store',
-          approvedBy: 'John Manager',
-          status: 'APPROVED',
-          createdAt: '2024-10-01T09:00:00Z'
-        },
-        {
-          id: '2',
-          category: 'Utilities',
-          description: 'Electricity and water bills',
-          amount: 8500,
-          date: '2024-10-03',
-          receiptNumber: 'UTIL-001',
-          branch: 'Main Store',
-          approvedBy: 'John Manager',
-          status: 'APPROVED',
-          createdAt: '2024-10-03T14:30:00Z'
-        },
-        {
-          id: '3',
-          category: 'Salaries',
-          description: 'Staff salaries for September 2024',
-          amount: 125000,
-          date: '2024-10-05',
-          receiptNumber: 'SAL-001',
-          notes: '5 employees including overtime',
-          branch: 'Main Store',
-          status: 'APPROVED',
-          createdAt: '2024-10-05T11:00:00Z'
-        },
-        {
-          id: '4',
-          category: 'Marketing',
-          description: 'Social media advertising campaign',
-          amount: 15000,
-          date: '2024-10-04',
-          receiptNumber: 'MKT-001',
-          branch: 'Main Store',
-          status: 'PENDING',
-          createdAt: '2024-10-04T16:45:00Z'
-        },
-        {
-          id: '5',
-          category: 'Supplies',
-          description: 'Office supplies and cleaning materials',
-          amount: 3500,
-          date: '2024-10-02',
-          receiptNumber: 'SUP-001',
-          branch: 'Branch 2 - Mombasa',
-          approvedBy: 'Mary Manager',
-          status: 'APPROVED',
-          createdAt: '2024-10-02T10:15:00Z'
-        },
-        {
-          id: '6',
-          category: 'Transportation',
-          description: 'Delivery vehicle fuel and maintenance',
-          amount: 12000,
-          date: '2024-10-05',
-          receiptNumber: 'TRANS-001',
-          branch: 'Branch 2 - Mombasa',
-          status: 'PENDING',
-          createdAt: '2024-10-05T13:20:00Z'
-        }
-      ])
-      setIsLoading(false)
-    }, 800)
-  }, [])
+    loadData()
+  }, [selectedBranch, selectedCategory, selectedStatus, searchTerm])
 
   // Listen for real-time accounting updates
   useEffect(() => {
     const unsubscribe = updateManager.subscribe('accounting_updated', (event) => {
       console.log('Accounting page: Update received', event.data)
-      if (event.data.type === 'sale' && event.data.amount) {
-        // Update total revenue when new sales are made
-        setTotalRevenue(prev => prev + event.data.amount)
-      }
+      loadData()
     })
 
-    // Also listen for sales completion events
+    // Listen for expense updates
+    const unsubscribeExpenses = updateManager.subscribe('expense_updated', (event) => {
+      console.log('Accounting page: Expense update received', event.data)
+      loadData()
+    })
+
+    // Listen for sales completion events
     const unsubscribeSales = updateManager.subscribe('sale_completed', (event) => {
       console.log('Accounting page: Sale completed, updating financial data', event.data)
-      if (event.data.totalAmount) {
-        setTotalRevenue(prev => prev + event.data.totalAmount)
-      }
+      fetchFinancialSummary()
     })
 
     return () => {
       unsubscribe()
+      unsubscribeExpenses()
       unsubscribeSales()
     }
   }, [])
 
-  const filteredExpenses = expenses.filter(expense => {
-    const matchesSearch =
-      expense.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      expense.receiptNumber?.toLowerCase().includes(searchTerm.toLowerCase())
-
-    const matchesCategory = selectedCategory === 'all' || expense.category === selectedCategory
-    const matchesStatus = selectedStatus === 'all' || expense.status === selectedStatus
-    const matchesBranch = selectedBranch === 'all' || expense.branch === selectedBranch
-
-    return matchesSearch && matchesCategory && matchesStatus && matchesBranch
-  })
-
-  const categories = Array.from(new Set(expenses.map(expense => expense.category)))
-  const branches = Array.from(new Set(expenses.map(expense => expense.branch)))
-
-  // Mock financial summary (now with dynamic revenue)
-  const financialSummary: FinancialSummary = {
-    totalRevenue: totalRevenue,
-    totalExpenses: expenses.reduce((sum, expense) => sum + expense.amount, 0),
-    grossProfit: 0, // Will be calculated
-    netProfit: 0, // Will be calculated
-    profitMargin: 0, // Will be calculated
-    expenseBreakdown: expenses.reduce((acc, expense) => {
-      acc[expense.category] = (acc[expense.category] || 0) + expense.amount
-      return acc
-    }, {} as Record<string, number>),
-    revenueByBranch: {
-      'Main Store': Math.round(totalRevenue * 0.6),
-      'Branch 2 - Mombasa': Math.round(totalRevenue * 0.25),
-      'Branch 3 - Kisumu': Math.round(totalRevenue * 0.15)
-    },
-    expensesByBranch: expenses.reduce((acc, expense) => {
-      acc[expense.branch] = (acc[expense.branch] || 0) + expense.amount
-      return acc
-    }, {} as Record<string, number>)
+  const handleAddExpense = () => {
+    setSelectedExpense(null)
+    setShowExpenseModal(true)
   }
 
-  financialSummary.grossProfit = financialSummary.totalRevenue
-  financialSummary.netProfit = financialSummary.grossProfit - financialSummary.totalExpenses
-  financialSummary.profitMargin = (financialSummary.netProfit / financialSummary.totalRevenue) * 100
+  const handleEditExpense = (expense: any) => {
+    setSelectedExpense(expense)
+    setShowExpenseModal(true)
+  }
+
+  const handleApproveReject = (expense: any, action: 'approve' | 'reject') => {
+    setSelectedExpense(expense)
+    setApprovalAction(action)
+    setShowApprovalModal(true)
+  }
+
+  const handleDeleteExpense = async (expense: any) => {
+    if (!confirm(`Are you sure you want to delete this expense? (${expense.description})`)) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/expenses/${expense.id}`, {
+        method: 'DELETE'
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        await loadData()
+      } else {
+        alert(result.error || 'Failed to delete expense')
+      }
+    } catch (error) {
+      console.error('Error deleting expense:', error)
+      alert('Failed to delete expense')
+    }
+  }
+
+  const onExpenseModalSuccess = () => {
+    loadData()
+  }
+
+  const onApprovalModalSuccess = () => {
+    loadData()
+  }
+
+  if (isLoading) {
+    return <LoadingState />
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-red-900 mb-2">Error Loading Accounting Data</h3>
+          <p className="text-red-600 mb-4">{error}</p>
+          <Button onClick={loadData} variant="outline">
+            Try Again
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // Use real data or fallback to empty state
+  const summaryData = financialSummary || {
+    totalRevenue: 0,
+    totalExpenses: 0,
+    grossProfit: 0,
+    netProfit: 0,
+    profitMargin: 0,
+    expenseBreakdown: {},
+    revenueByBranch: {},
+    expensesByBranch: {}
+  }
+
+  const categories = Array.from(new Set(expenses.map(expense => expense.category)))
+  const filteredExpenses = expenses // Server-side filtering applied
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
@@ -239,7 +283,7 @@ export default function AccountingPage() {
             <Download className="h-4 w-4 mr-2" />
             Export Report
           </Button>
-          <Button>
+          <Button onClick={handleAddExpense}>
             <Plus className="h-4 w-4 mr-2" />
             Add Expense
           </Button>
@@ -250,23 +294,23 @@ export default function AccountingPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
         <StatCard
           title="Total Revenue"
-          value={formatCurrency(financialSummary.totalRevenue)}
+          value={formatCurrency(summaryData.totalRevenue)}
           icon={TrendingUp}
           color="bg-green-500"
-          change="This month"
+          change={financialSummary?.summary?.totalSales ? `${financialSummary.summary.totalSales} sales` : "This month"}
           changeType="neutral"
         />
         <StatCard
           title="Total Expenses"
-          value={formatCurrency(financialSummary.totalExpenses)}
+          value={formatCurrency(summaryData.totalExpenses)}
           icon={TrendingDown}
           color="bg-red-500"
-          change="This month"
+          change={financialSummary?.summary?.approvedExpenses ? `${financialSummary.summary.approvedExpenses} approved` : "This month"}
           changeType="neutral"
         />
         <StatCard
           title="Gross Profit"
-          value={formatCurrency(financialSummary.grossProfit)}
+          value={formatCurrency(summaryData.grossProfit)}
           icon={DollarSign}
           color="bg-blue-500"
           change="Revenue - COGS"
@@ -274,17 +318,17 @@ export default function AccountingPage() {
         />
         <StatCard
           title="Net Profit"
-          value={formatCurrency(financialSummary.netProfit)}
+          value={formatCurrency(summaryData.netProfit)}
           icon={Calculator}
-          color={financialSummary.netProfit >= 0 ? "bg-green-500" : "bg-red-500"}
+          color={summaryData.netProfit >= 0 ? "bg-green-500" : "bg-red-500"}
           change="After expenses"
           changeType="neutral"
         />
         <StatCard
           title="Profit Margin"
-          value={`${financialSummary.profitMargin.toFixed(1)}%`}
+          value={`${summaryData.profitMargin.toFixed(1)}%`}
           icon={FileText}
-          color={financialSummary.profitMargin >= 0 ? "bg-green-500" : "bg-red-500"}
+          color={summaryData.profitMargin >= 0 ? "bg-green-500" : "bg-red-500"}
           change="Net profit %"
           changeType="neutral"
         />
@@ -298,24 +342,30 @@ export default function AccountingPage() {
             <FileText className="h-5 w-5 mr-2" />
             Expense Breakdown
           </h2>
-          <p className="text-secondary mb-6">Expenses by category for this month</p>
-          <div className="space-y-3">
-            {Object.entries(financialSummary.expenseBreakdown).map(([category, amount]) => {
-              const percentage = (amount / financialSummary.totalExpenses) * 100
-              return (
-                <div key={category} className="flex items-center justify-between p-3 bg-surface rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                    <span className="font-medium text-primary">{category}</span>
+          <p className="text-secondary mb-6">Expenses by category for current period</p>
+          {Object.keys(summaryData.expenseBreakdown).length > 0 ? (
+            <div className="space-y-3">
+              {Object.entries(summaryData.expenseBreakdown).map(([category, amount]) => {
+                const percentage = summaryData.totalExpenses > 0 ? (amount / summaryData.totalExpenses) * 100 : 0
+                return (
+                  <div key={category} className="flex items-center justify-between p-3 bg-surface rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                      <span className="font-medium text-primary">{category}</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium text-primary">{formatCurrency(amount)}</p>
+                      <p className="text-xs text-secondary">{percentage.toFixed(1)}%</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-medium text-primary">{formatCurrency(amount)}</p>
-                    <p className="text-xs text-secondary">{percentage.toFixed(1)}%</p>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-secondary">
+              No expense data available
+            </div>
+          )}
         </div>
 
         {/* Branch Performance */}
@@ -325,42 +375,48 @@ export default function AccountingPage() {
             Branch Performance
           </h2>
           <p className="text-secondary mb-6">Revenue vs expenses by branch</p>
-          <div className="space-y-3">
-            {Object.entries(financialSummary.revenueByBranch).map(([branch, revenue]) => {
-              const expenses = financialSummary.expensesByBranch[branch] || 0
-              const profit = revenue - expenses
-              const profitMargin = (profit / revenue) * 100
+          {Object.keys(summaryData.revenueByBranch).length > 0 ? (
+            <div className="space-y-3">
+              {Object.entries(summaryData.revenueByBranch).map(([branch, revenue]) => {
+                const expenses = summaryData.expensesByBranch[branch] || 0
+                const profit = revenue - expenses
+                const profitMargin = revenue > 0 ? (profit / revenue) * 100 : 0
 
-              return (
-                <div key={branch} className="p-3 bg-surface rounded-lg">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="font-medium text-primary">{branch}</span>
-                    <span className={`font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                      {formatCurrency(profit)}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <span className="text-secondary">Revenue:</span>
-                      <span className="ml-2 font-medium text-primary">{formatCurrency(revenue)}</span>
-                    </div>
-                    <div>
-                      <span className="text-secondary">Expenses:</span>
-                      <span className="ml-2 font-medium text-primary">{formatCurrency(expenses)}</span>
-                    </div>
-                  </div>
-                  <div className="mt-2">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-secondary">Margin:</span>
-                      <span className={`font-medium ${profitMargin >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {profitMargin.toFixed(1)}%
+                return (
+                  <div key={branch} className="p-3 bg-surface rounded-lg">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="font-medium text-primary">{branch}</span>
+                      <span className={`font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {formatCurrency(profit)}
                       </span>
                     </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <span className="text-secondary">Revenue:</span>
+                        <span className="ml-2 font-medium text-primary">{formatCurrency(revenue)}</span>
+                      </div>
+                      <div>
+                        <span className="text-secondary">Expenses:</span>
+                        <span className="ml-2 font-medium text-primary">{formatCurrency(expenses)}</span>
+                      </div>
+                    </div>
+                    <div className="mt-2">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-secondary">Margin:</span>
+                        <span className={`font-medium ${profitMargin >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {profitMargin.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-secondary">
+              No branch performance data available
+            </div>
+          )}
         </div>
       </div>
 
@@ -422,7 +478,7 @@ export default function AccountingPage() {
               >
                 <option value="all">All Branches</option>
                 {branches.map(branch => (
-                  <option key={branch} value={branch}>{branch}</option>
+                  <option key={branch.id} value={branch.id}>{branch.name}</option>
                 ))}
               </select>
             </div>
@@ -442,7 +498,7 @@ export default function AccountingPage() {
             {
               key: 'date',
               label: 'Date',
-              render: (expense: Expense) => (
+              render: (expense: any) => (
                 <div className="flex flex-col">
                   <span className="font-medium text-primary">{formatDate(expense.date)}</span>
                   <span className="text-xs text-secondary">
@@ -454,14 +510,14 @@ export default function AccountingPage() {
             {
               key: 'category',
               label: 'Category',
-              render: (expense: Expense) => (
+              render: (expense: any) => (
                 <Badge variant="outline">{expense.category}</Badge>
               )
             },
             {
               key: 'description',
               label: 'Description',
-              render: (expense: Expense) => (
+              render: (expense: any) => (
                 <div className="max-w-xs">
                   <p className="font-medium text-primary">{expense.description}</p>
                   {expense.notes && (
@@ -473,21 +529,21 @@ export default function AccountingPage() {
             {
               key: 'amount',
               label: 'Amount',
-              render: (expense: Expense) => (
+              render: (expense: any) => (
                 <span className="font-bold text-red-600">{formatCurrency(expense.amount)}</span>
               )
             },
             {
               key: 'branch',
               label: 'Branch',
-              render: (expense: Expense) => (
-                <Badge variant="outline">{expense.branch}</Badge>
+              render: (expense: any) => (
+                <Badge variant="outline">{expense.branch?.name || 'Unknown'}</Badge>
               )
             },
             {
               key: 'receipt',
               label: 'Receipt',
-              render: (expense: Expense) => (
+              render: (expense: any) => (
                 expense.receiptNumber ? (
                   <span className="font-mono text-sm text-primary">{expense.receiptNumber}</span>
                 ) : (
@@ -498,7 +554,7 @@ export default function AccountingPage() {
             {
               key: 'status',
               label: 'Status',
-              render: (expense: Expense) => (
+              render: (expense: any) => (
                 <StatusBadge
                   status={expense.status === 'APPROVED' ? 'success' :
                          expense.status === 'PENDING' ? 'warning' : 'error'}
@@ -508,11 +564,11 @@ export default function AccountingPage() {
               )
             },
             {
-              key: 'approvedBy',
-              label: 'Approved By',
-              render: (expense: Expense) => (
-                expense.approvedBy ? (
-                  <span className="text-sm text-primary">{expense.approvedBy}</span>
+              key: 'createdBy',
+              label: 'Created By',
+              render: (expense: any) => (
+                expense.creator ? (
+                  <span className="text-sm text-primary">{expense.creator.name}</span>
                 ) : (
                   <span className="text-muted">-</span>
                 )
@@ -521,17 +577,47 @@ export default function AccountingPage() {
             {
               key: 'actions',
               label: 'Actions',
-              render: (expense: Expense) => (
+              render: (expense: any) => (
                 <div className="flex justify-end space-x-2">
                   {expense.status === 'PENDING' && (
-                    <Button variant="ghost" size="sm" className="text-emerald-600">
-                      <CheckCircle className="h-4 w-4" />
-                    </Button>
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-emerald-600"
+                        onClick={() => handleApproveReject(expense, 'approve')}
+                        title="Approve"
+                      >
+                        <CheckCircle className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-600"
+                        onClick={() => handleApproveReject(expense, 'reject')}
+                        title="Reject"
+                      >
+                        <XCircle className="h-4 w-4" />
+                      </Button>
+                    </>
                   )}
-                  <Button variant="ghost" size="sm">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleEditExpense(expense)}
+                    title="Edit"
+                    disabled={expense.status !== 'PENDING'}
+                  >
                     <Edit className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="sm" className="text-red-600">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-600"
+                    onClick={() => handleDeleteExpense(expense)}
+                    title="Delete"
+                    disabled={expense.status !== 'PENDING'}
+                  >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -546,11 +632,32 @@ export default function AccountingPage() {
               : 'Get started by adding your first expense',
             action: {
               label: "Add Expense",
-              onClick: () => console.log('Add Expense clicked')
+              onClick: handleAddExpense
             }
           }}
         />
       </div>
+
+      {/* Modals */}
+      {showExpenseModal && (
+        <ExpenseModal
+          isOpen={showExpenseModal}
+          onClose={() => setShowExpenseModal(false)}
+          expense={selectedExpense}
+          onSuccess={onExpenseModalSuccess}
+          branches={branches}
+        />
+      )}
+
+      {showApprovalModal && (
+        <ApprovalModal
+          isOpen={showApprovalModal}
+          onClose={() => setShowApprovalModal(false)}
+          expense={selectedExpense}
+          action={approvalAction}
+          onSuccess={onApprovalModalSuccess}
+        />
+      )}
     </div>
   )
 }
