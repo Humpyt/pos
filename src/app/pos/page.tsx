@@ -26,6 +26,7 @@ import { ProductWithStock } from '@/lib/product-service'
 interface CartItem {
   product: ProductWithStock
   quantity: number
+  unitPrice: number
   totalPrice: number
 }
 
@@ -137,13 +138,29 @@ export default function POSPage() {
         }
         return prevCart.map(item =>
           item.product.id === product.id
-            ? { ...item, quantity: item.quantity + 1, totalPrice: (item.quantity + 1) * product.price }
+            ? { ...item, quantity: item.quantity + 1, totalPrice: (item.quantity + 1) * item.unitPrice }
             : item
         )
       } else {
-        return [...prevCart, { product, quantity: 1, totalPrice: product.price }]
+        return [...prevCart, { product, quantity: 1, unitPrice: product.price, totalPrice: product.price }]
       }
     })
+  }
+
+  const updateItemPrice = (productId: string, newPrice: number) => {
+    if (newPrice < 0) return
+
+    setCart(prevCart =>
+      prevCart.map(item =>
+        item.product.id === productId
+          ? {
+              ...item,
+              unitPrice: newPrice,
+              totalPrice: item.quantity * newPrice
+            }
+          : item
+      )
+    )
   }
 
   const updateQuantity = (productId: string, newQuantity: number) => {
@@ -155,7 +172,7 @@ export default function POSPage() {
           ? {
               ...item,
               quantity: Math.min(newQuantity, item.product.stock),
-              totalPrice: Math.min(newQuantity, item.product.stock) * item.product.price
+              totalPrice: Math.min(newQuantity, item.product.stock) * item.unitPrice
             }
           : item
       )
@@ -414,7 +431,18 @@ export default function POSPage() {
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex-1">
                           <h4 className="font-medium text-sm text-primary">{item.product.name}</h4>
-                          <p className="text-xs text-muted">{formatCurrency(item.product.price)} each</p>
+                          <div className="flex items-center space-x-2 mt-1">
+                            <span className="text-xs text-muted">Price:</span>
+                            <input
+                              type="number"
+                              value={item.unitPrice}
+                              onChange={(e) => updateItemPrice(item.product.id, parseFloat(e.target.value) || 0)}
+                              className="w-20 px-1 py-0.5 text-xs border border-input-border rounded focus:border-primary focus:ring-1 focus:ring-primary"
+                              min="0"
+                              step="100"
+                            />
+                            <span className="text-xs text-muted">× {item.quantity}</span>
+                          </div>
                         </div>
                         <button
                           className="p-1 hover:bg-red-50 rounded transition-colors"
@@ -444,6 +472,11 @@ export default function POSPage() {
                           {formatCurrency(item.totalPrice)}
                         </span>
                       </div>
+                      {item.unitPrice !== item.product.price && (
+                        <div className="mt-2 text-xs text-amber-600">
+                          Original price: {formatCurrency(item.product.price)}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

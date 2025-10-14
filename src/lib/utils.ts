@@ -119,8 +119,9 @@ export function parseCSV<T>(csvText: string): T[] {
 
     headers.forEach((header, index) => {
       const value = values[index] || ''
-      // Try to parse as number
-      const numValue = parseFloat(value)
+      // Try to parse as number (remove commas first)
+      const cleanValue = value.replace(/,/g, '')
+      const numValue = parseFloat(cleanValue)
       obj[header] = isNaN(numValue) ? value : numValue
     })
 
